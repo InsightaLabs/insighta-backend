@@ -12,16 +12,16 @@ import { authorize } from "../../middleware/authorize";
 
 const router = Router();
 
-router.post("/", authenticate, authorize("admin"), createProfile);
+router.post("/", authorize("admin"), createProfile);
 
-router.get("/", authenticate, authorize("analyst"), getAllProfiles);
+router.get("/", authorize("analyst"), getAllProfiles);
 
-router.get("/search", authenticate, authorize("analyst"), searchForProfiles);
+router.get("/search", authorize("analyst"), searchForProfiles);
 
-router.get("/export", authenticate, authorize("analyst"), exportCSV);
+router.get("/export", authorize("analyst"), exportCSV);
 
-router.get("/:id", authenticate, authorize("analyst"), getProfile);
+router.get("/:id", authorize("analyst"), getProfile);
 
-router.delete("/:id", authenticate, authorize("admin"), deleteProfile);
+router.delete("/:id", authorize("admin"), deleteProfile);
 
 export default router;

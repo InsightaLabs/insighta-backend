@@ -175,6 +175,26 @@ export async function githubCallback(req: Request, res: Response) {
       expires_at: expiresAt,
     });
 
+    const isBrowser = req.headers['x-client-type'] !== 'cli';
+
+    if (isBrowser) {
+      res.cookie('refresh_token', rawRefreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production', 
+        sameSite: 'strict',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      })
+
+      const csrfToken = crypto.randomBytes(32).toString('hex');
+      res.cookie('csrf_token', csrfToken, {
+        httpOnly: false,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+      });
+
+      return res.redirect(`${process.env.WEB_PORTAL_URL}/dashboard?access_token=${accessToken}`);
+    }
+
     return res.status(200).json({
       status: "success",
       access_token: accessToken,
