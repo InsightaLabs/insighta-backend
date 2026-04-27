@@ -155,224 +155,246 @@ export async function createProfile(req: Request, res: Response) {
 }
 
 export async function getAllProfiles(req: Request, res: Response) {
-    const {
-        gender,
-        country_id,
-        age_group,
-        min_age,
-        max_age,
-        min_gender_probability,
-        min_country_probability,
-        sort_by,
-        order,
+  const {
+    gender,
+    country_id,
+    age_group,
+    min_age,
+    max_age,
+    min_gender_probability,
+    min_country_probability,
+    sort_by,
+    order,
+    page,
+    limit,
+  } = req.query;
+
+  const options: AllProfileQueryOptions = {};
+
+  if (gender !== undefined) {
+    if (!gender || typeof gender !== "string") {
+      return res.status(400).json({
+        status: "error",
+        message: "Missing or empty parameters",
+      });
+    }
+    if (!isGender(gender)) {
+      return res.status(422).json({
+        status: "error",
+        message: "Invalid query parameters",
+      });
+    }
+    options.gender = gender;
+  }
+
+  if (country_id !== undefined) {
+    if (!country_id || typeof country_id !== "string") {
+      return res.status(400).json({
+        status: "error",
+        message: "Missing or empty parameters",
+      });
+    }
+    const validCountry = countryMap.has(country_id);
+    if (!validCountry) {
+      return res.status(422).json({
+        status: "error",
+        message: "Invalid query paramters",
+      });
+    }
+  }
+
+  if (age_group !== undefined) {
+    if (!age_group || typeof age_group !== "string") {
+      return res.status(400).json({
+        status: "error",
+        message: "Missing or empty query parameters",
+      });
+    }
+    if (!isAgeGroup(age_group)) {
+      return res.status(422).json({
+        status: "error",
+        message: "Invalid query parameters",
+      });
+    }
+    options.age_group = age_group;
+  }
+
+  if (min_age !== undefined) {
+    const parsed = parseInt(min_age as string);
+    if (isNaN(parsed)) {
+      return res.status(422).json({
+        status: "error",
+        message: "Invalid query parameters",
+      });
+    }
+    options.min_age = parsed;
+  }
+
+  if (max_age !== undefined) {
+    const parsed = parseInt(max_age as string);
+    if (isNaN(parsed)) {
+      return res.status(422).json({
+        status: "error",
+        message: "Invalid query parameters",
+      });
+    }
+    options.max_age = parsed;
+  }
+
+  if (min_gender_probability !== undefined) {
+    const parsed = parseFloat(min_gender_probability as string);
+    if (isNaN(parsed)) {
+      return res.status(422).json({
+        status: "error",
+        message: "Invalid query parameters",
+      });
+    }
+    options.min_gender_probability = parsed;
+  }
+
+  if (min_country_probability !== undefined) {
+    const parsed = parseFloat(min_country_probability as string);
+    if (isNaN(parsed)) {
+      return res.status(422).json({
+        status: "error",
+        message: "Invalid query parameters",
+      });
+    }
+    options.min_country_probability = parsed;
+  }
+
+  if (sort_by !== undefined) {
+    if (!sort_by || typeof sort_by !== "string") {
+      return res.status(400).json({
+        status: "error",
+        message: "Missing or empty query parameters",
+      });
+    }
+    if (!isSortField(sort_by)) {
+      return res.status(422).json({
+        status: "error",
+        message: "Invalid query parameters",
+      });
+    }
+    options.sort_by = sort_by;
+  }
+
+  if (order !== undefined) {
+    if (!order || typeof order !== "string") {
+      return res.status(400).json({
+        status: "error",
+        message: "Missing or empty query parameters",
+      });
+    }
+    if (!isSortOrder(order)) {
+      return res.status(422).json({
+        status: "error",
+        message: "Invalid query parameters",
+      });
+    }
+    options.sort_order = order;
+  }
+
+  if (page !== undefined) {
+    const parsed = parseInt(page as string);
+    if (isNaN(parsed)) {
+      return res.status(422).json({
+        status: "error",
+        message: "Invalid query parameters",
+      });
+    }
+    options.page = parsed;
+  }
+
+  if (limit !== undefined) {
+    const parsed = parseInt(limit as string);
+    if (isNaN(parsed)) {
+      return res.status(422).json({
+        status: "error",
+        message: "Invalid query parameters",
+      });
+    }
+    options.limit = parsed;
+  }
+
+  try {
+    const { page, limit, total, records } =
+      await dbClient.getAllRecords(options);
+    // return res.status(200).json({
+    //   status: "success",
+    //   page,
+    //   limit,
+    //   total,
+    //   data: records,
+    // });
+    const totalPages = Math.ceil(total / limit);
+    return res.status(200).json({
+      status: "success",
+      data: records,
+      meta: {
         page,
         limit,
-      } = req.query;
-    
-      const options: AllProfileQueryOptions = {};
-    
-      if (gender !== undefined) {
-        if (!gender || typeof gender !== 'string') {
-            return res.status(400).json({
-                status: "error",
-                message: "Missing or empty parameters"
-            })
-        }
-        if (!isGender(gender)) {
-            return res.status(422).json({
-                status: "error",
-                message: "Invalid query parameters"
-            })
-        }
-        options.gender = gender;
+        total,
+        totalPages
       }
-      
-      if (country_id !== undefined) {
-        if (!country_id || typeof country_id !== 'string') {
-            return res.status(400).json({
-                status: "error",
-                message: "Missing or empty parameters"
-            })
-        }
-        const validCountry = countryMap.has(country_id);
-        if (!validCountry) {
-            return res.status(422).json({
-                status: "error",
-                message: "Invalid query paramters"
-            })
-        }
-      }
-
-      if (age_group !== undefined) {
-        if (!age_group || typeof age_group !== 'string') {
-            return res.status(400).json({
-                status: "error",
-                message: "Missing or empty query parameters"
-            })
-        }
-        if (!isAgeGroup(age_group)) {
-            return res.status(422).json({
-                status: "error",
-                message: "Invalid query parameters"
-            })
-        }
-        options.age_group = age_group;
-      }
-      
-      if (min_age !== undefined) {
-        const parsed = parseInt(min_age as string);
-        if (isNaN(parsed)) {
-            return res.status(422).json({
-                status: "error",
-                message: "Invalid query parameters"
-            })
-        }
-        options.min_age = parsed
-      }
-
-      if (max_age !== undefined) {
-        const parsed = parseInt(max_age as string);
-        if (isNaN(parsed)) {
-            return res.status(422).json({
-                status: "error",
-                message: "Invalid query parameters"
-            })
-        }
-        options.max_age = parsed
-      }
-
-      if (min_gender_probability !== undefined) {
-        const parsed = parseFloat(min_gender_probability as string);
-        if (isNaN(parsed)) {
-            return res.status(422).json({
-                status: "error",
-                message: "Invalid query parameters"
-            })
-        }
-        options.min_gender_probability = parsed
-      }
-
-      if (min_country_probability !== undefined) {
-        const parsed = parseFloat(min_country_probability as string);
-        if (isNaN(parsed)) {
-            return res.status(422).json({
-                status: "error",
-                message: "Invalid query parameters"
-            })
-        }
-        options.min_country_probability = parsed
-      }
-
-      if (sort_by !== undefined) {
-        if (!sort_by || typeof sort_by !== 'string') {
-            return res.status(400).json({
-                status: "error",
-                message: "Missing or empty query parameters"
-            })
-        }
-        if (!isSortField(sort_by)) {
-            return res.status(422).json({
-                status: "error",
-                message: "Invalid query parameters"
-            })
-        }
-        options.sort_by = sort_by;
-      }
-    
-      if (order !== undefined) {
-        if (!order || typeof order !== 'string') {
-            return res.status(400).json({
-                status: "error",
-                message: "Missing or empty query parameters"
-            })
-        }
-        if (!isSortOrder(order)) {
-            return res.status(422).json({
-                status: "error",
-                message: "Invalid query parameters"
-            })
-        }
-        options.sort_order = order;
-      }
-    
-      if (page !== undefined) {
-        const parsed = parseInt(page as string);
-        if (isNaN(parsed)) {
-            return res.status(422).json({
-                status: "error",
-                message: "Invalid query parameters"
-            })
-        }
-        options.page = parsed
-      }
-
-      if (limit !== undefined) {
-        const parsed = parseInt(limit as string);
-        if (isNaN(parsed)) {
-            return res.status(422).json({
-                status: "error",
-                message: "Invalid query parameters"
-            })
-        }
-        options.limit = parsed
-      }
-    
-      try {
-        const { page, limit, total, records } =
-          await dbClient.getAllRecords(options);
-        return res.status(200).json({
-          status: "success",
-          page,
-          limit,
-          total,
-          data: records,
-        });
-      } catch (error) {
-        return res.status(500).json({
-          status: "error",
-          message: "Internal server error",
-        });
-      }
+    })
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+      message: "Internal server error",
+    });
+  }
 }
 
 export async function searchForProfiles(req: Request, res: Response) {
-    const { q } = req.query;
-      if (!q || typeof q !== "string") {
-        return res.status(400).json({
-          status: "error",
-          message: "Missing or invalid query",
-        });
+  const { q } = req.query;
+  if (!q || typeof q !== "string") {
+    return res.status(400).json({
+      status: "error",
+      message: "Missing or invalid query",
+    });
+  }
+
+  const options = analyzeNaturalLanguageQuery(q);
+
+  if (!options) {
+    return res.status(422).json({
+      status: "error",
+      message: "Unable to interpret query",
+    });
+  }
+
+  try {
+    const { page, limit, total, records } =
+      await dbClient.getAllRecords(options);
+    // return res.status(200).json({
+    //   status: "success",
+    //   page,
+    //   limit,
+    //   total,
+    //   data: records,
+    // });
+    const totalPages = Math.ceil(total / limit);
+    return res.status(200).json({
+      status: "success",
+      data: records,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages
       }
-    
-      const options = analyzeNaturalLanguageQuery(q);
-    
-      if (!options) {
-        return res.status(422).json({
-          status: "error",
-          message: "Unable to interpret query",
-        });
-      }
-    
-      try {
-        const { page, limit, total, records } =
-          await dbClient.getAllRecords(options);
-        return res.status(200).json({
-          status: "success",
-          page,
-          limit,
-          total,
-          data: records,
-        });
-      } catch (error) {
-        return res.status(500).json({
-          status: "error",
-          message: "Internal server error",
-        });
-      }
+    })
+  } catch (error) {
+    return res.status(500).json({
+      status: "error",
+      message: "Internal server error",
+    });
+  }
 }
 
 export async function getProfile(req: Request, res: Response) {
-    const { id } = req.params;
+  const { id } = req.params;
   console.log(id);
 
   if (!id) {
@@ -413,7 +435,7 @@ export async function getProfile(req: Request, res: Response) {
 }
 
 export async function deleteProfile(req: Request, res: Response) {
-    const { id } = req.params;
+  const { id } = req.params;
   console.log(id);
 
   if (!id) {
@@ -443,5 +465,111 @@ export async function deleteProfile(req: Request, res: Response) {
         .status(500)
         .json({ status: "error", message: "Internal server error" });
     }
+  }
+}
+
+export async function exportCSV(req: Request, res: Response) {
+  const {
+    gender,
+    country_id,
+    age_group,
+    min_age,
+    max_age,
+    min_gender_probability,
+    min_country_probability,
+    sort_by,
+    order,
+  } = req.query;
+
+  const options: AllProfileQueryOptions = {
+    limit: 1000, // fetch all — no pagination for export
+    page: 1,
+  };
+
+  if (gender !== undefined) {
+    if (!isGender(gender as string)) {
+      return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+    }
+    options.gender = gender as AllProfileQueryOptions["gender"];
+  }
+
+  if (country_id !== undefined) {
+    if (!countryMap.has(country_id as string)) {
+      return res.status(422).json({ status: "error", message: "Invalid country_id" });
+    }
+    options.country_id = country_id as string;
+  }
+
+  if (age_group !== undefined) {
+    if (!isAgeGroup(age_group as string)) {
+      return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+    }
+    options.age_group = age_group as AllProfileQueryOptions["age_group"];
+  }
+
+  if (min_age !== undefined) {
+    const parsed = parseInt(min_age as string);
+    if (isNaN(parsed)) return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+    options.min_age = parsed;
+  }
+
+  if (max_age !== undefined) {
+    const parsed = parseInt(max_age as string);
+    if (isNaN(parsed)) return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+    options.max_age = parsed;
+  }
+
+  if (min_gender_probability !== undefined) {
+    const parsed = parseFloat(min_gender_probability as string);
+    if (isNaN(parsed)) return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+    options.min_gender_probability = parsed;
+  }
+
+  if (min_country_probability !== undefined) {
+    const parsed = parseFloat(min_country_probability as string);
+    if (isNaN(parsed)) return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+    options.min_country_probability = parsed;
+  }
+
+  if (sort_by !== undefined) {
+    if (!isSortField(sort_by as string)) {
+      return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+    }
+    options.sort_by = sort_by as AllProfileQueryOptions["sort_by"];
+  }
+
+  if (order !== undefined) {
+    if (!isSortOrder(order as string)) {
+      return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+    }
+    options.sort_order = order as AllProfileQueryOptions["sort_order"];
+  }
+
+  try {
+    const { records } = await dbClient.getAllRecords(options);
+
+    const { stringify } = await import("csv-stringify");
+
+    const columns = [
+      "id", "name", "gender", "gender_probability",
+      "age", "age_group", "country_id", "country_name",
+      "country_probability", "created_at",
+    ];
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", "attachment; filename=\"profiles.csv\"");
+
+    const stringifier = stringify({ header: true, columns });
+
+    stringifier.pipe(res);
+
+    for (const record of records) {
+      stringifier.write(record);
+    }
+
+    stringifier.end();
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ status: "error", message: "Internal server error" });
   }
 }
