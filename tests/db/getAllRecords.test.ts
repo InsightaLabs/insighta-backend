@@ -31,34 +31,34 @@ describe("getAllRecords — no filters", () => {
 describe("getAllRecords — gender filter", () => {
   it("returns only male records", async () => {
     const result = await db.getAllRecords({ gender: "male", limit: 50 });
-    expect(result.records.every(r => r.gender === "male")).toBe(true);
+    expect(result.records.every((r) => r.gender === "male")).toBe(true);
   });
 
   it("returns only female records", async () => {
     const result = await db.getAllRecords({ gender: "female", limit: 50 });
-    expect(result.records.every(r => r.gender === "female")).toBe(true);
+    expect(result.records.every((r) => r.gender === "female")).toBe(true);
   });
 });
 
 describe("getAllRecords — age_group filter", () => {
   it("returns only adult records", async () => {
     const result = await db.getAllRecords({ age_group: "adult", limit: 50 });
-    expect(result.records.every(r => r.age_group === "adult")).toBe(true);
+    expect(result.records.every((r) => r.age_group === "adult")).toBe(true);
   });
 
   it("returns only teenager records", async () => {
     const result = await db.getAllRecords({ age_group: "teenager", limit: 50 });
-    expect(result.records.every(r => r.age_group === "teenager")).toBe(true);
+    expect(result.records.every((r) => r.age_group === "teenager")).toBe(true);
   });
 
   it("returns only child records", async () => {
     const result = await db.getAllRecords({ age_group: "child", limit: 50 });
-    expect(result.records.every(r => r.age_group === "child")).toBe(true);
+    expect(result.records.every((r) => r.age_group === "child")).toBe(true);
   });
 
   it("returns only senior records", async () => {
     const result = await db.getAllRecords({ age_group: "senior", limit: 50 });
-    expect(result.records.every(r => r.age_group === "senior")).toBe(true);
+    expect(result.records.every((r) => r.age_group === "senior")).toBe(true);
   });
 });
 
@@ -66,37 +66,47 @@ describe("getAllRecords — country_id filter", () => {
   it("returns only records from Nigeria (NG)", async () => {
     const result = await db.getAllRecords({ country_id: "NG", limit: 50 });
     expect(result.records.length).toBeGreaterThan(0);
-    expect(result.records.every(r => r.country_id === "NG")).toBe(true);
+    expect(result.records.every((r) => r.country_id === "NG")).toBe(true);
   });
 
   it("returns only records from Kenya (KE)", async () => {
     const result = await db.getAllRecords({ country_id: "KE", limit: 50 });
     expect(result.records.length).toBeGreaterThan(0);
-    expect(result.records.every(r => r.country_id === "KE")).toBe(true);
+    expect(result.records.every((r) => r.country_id === "KE")).toBe(true);
   });
 });
 
 describe("getAllRecords — age range filters", () => {
   it("returns only records with age >= min_age", async () => {
     const result = await db.getAllRecords({ min_age: 30, limit: 50 });
-    expect(result.records.every(r => r.age >= 30)).toBe(true);
+    expect(result.records.every((r) => r.age >= 30)).toBe(true);
   });
 
   it("returns only records with age <= max_age", async () => {
     const result = await db.getAllRecords({ max_age: 20, limit: 50 });
-    expect(result.records.every(r => r.age <= 20)).toBe(true);
+    expect(result.records.every((r) => r.age <= 20)).toBe(true);
   });
 
   it("returns records within an age range", async () => {
-    const result = await db.getAllRecords({ min_age: 20, max_age: 30, limit: 50 });
-    expect(result.records.every(r => r.age >= 20 && r.age <= 30)).toBe(true);
+    const result = await db.getAllRecords({
+      min_age: 20,
+      max_age: 30,
+      limit: 50,
+    });
+    expect(result.records.every((r) => r.age >= 20 && r.age <= 30)).toBe(true);
   });
 });
 
 describe("getAllRecords — combined filters", () => {
   it("filters by gender + country_id", async () => {
-    const result = await db.getAllRecords({ gender: "male", country_id: "NG", limit: 50 });
-    expect(result.records.every(r => r.gender === "male" && r.country_id === "NG")).toBe(true);
+    const result = await db.getAllRecords({
+      gender: "male",
+      country_id: "NG",
+      limit: 50,
+    });
+    expect(
+      result.records.every((r) => r.gender === "male" && r.country_id === "NG"),
+    ).toBe(true);
   });
 
   it("filters by gender + age_group + country_id", async () => {
@@ -104,35 +114,58 @@ describe("getAllRecords — combined filters", () => {
       gender: "male",
       age_group: "adult",
       country_id: "KE",
-      limit: 50
+      limit: 50,
     });
-    expect(result.records.every(r =>
-      r.gender === "male" && r.age_group === "adult" && r.country_id === "KE"
-    )).toBe(true);
+    expect(
+      result.records.every(
+        (r) =>
+          r.gender === "male" &&
+          r.age_group === "adult" &&
+          r.country_id === "KE",
+      ),
+    ).toBe(true);
   });
 
   it("filters by gender + min_age", async () => {
-    const result = await db.getAllRecords({ gender: "female", min_age: 25, limit: 50 });
-    expect(result.records.every(r => r.gender === "female" && r.age >= 25)).toBe(true);
+    const result = await db.getAllRecords({
+      gender: "female",
+      min_age: 25,
+      limit: 50,
+    });
+    expect(
+      result.records.every((r) => r.gender === "female" && r.age >= 25),
+    ).toBe(true);
   });
 });
 
 describe("getAllRecords — sorting", () => {
   it("sorts by age ascending", async () => {
-    const result = await db.getAllRecords({ sort_by: "age", sort_order: "asc", limit: 20 });
-    const ages = result.records.map(r => r.age);
+    const result = await db.getAllRecords({
+      sort_by: "age",
+      sort_order: "asc",
+      limit: 20,
+    });
+    const ages = result.records.map((r) => r.age);
     expect(ages).toEqual([...ages].sort((a, b) => a - b));
   });
 
   it("sorts by age descending", async () => {
-    const result = await db.getAllRecords({ sort_by: "age", sort_order: "desc", limit: 20 });
-    const ages = result.records.map(r => r.age);
+    const result = await db.getAllRecords({
+      sort_by: "age",
+      sort_order: "desc",
+      limit: 20,
+    });
+    const ages = result.records.map((r) => r.age);
     expect(ages).toEqual([...ages].sort((a, b) => b - a));
   });
 
   it("sorts by gender_probability descending", async () => {
-    const result = await db.getAllRecords({ sort_by: "gender_probability", sort_order: "desc", limit: 20 });
-    const probs = result.records.map(r => r.gender_probability);
+    const result = await db.getAllRecords({
+      sort_by: "gender_probability",
+      sort_order: "desc",
+      limit: 20,
+    });
+    const probs = result.records.map((r) => r.gender_probability);
     expect(probs).toEqual([...probs].sort((a, b) => b - a));
   });
 });
@@ -141,9 +174,9 @@ describe("getAllRecords — pagination", () => {
   it("returns different records on different pages", async () => {
     const page1 = await db.getAllRecords({ page: 1, limit: 10 });
     const page2 = await db.getAllRecords({ page: 2, limit: 10 });
-    const ids1 = page1.records.map(r => r.id);
-    const ids2 = page2.records.map(r => r.id);
-    expect(ids1.some(id => ids2.includes(id))).toBe(false);
+    const ids1 = page1.records.map((r) => r.id);
+    const ids2 = page2.records.map((r) => r.id);
+    expect(ids1.some((id) => ids2.includes(id))).toBe(false);
   });
 
   it("respects the limit parameter", async () => {

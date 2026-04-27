@@ -100,19 +100,19 @@ Returns profiles with optional filtering, sorting, and pagination.
 
 **Query parameters (all optional):**
 
-| Parameter | Type | Description |
-|---|---|---|
-| `gender` | `male` \| `female` | Filter by gender |
-| `age_group` | `child` \| `teenager` \| `adult` \| `senior` | Filter by age group |
-| `country_id` | string | ISO 3166-1 alpha-2 code (e.g. `NG`, `US`) |
-| `min_age` | number | Minimum age (inclusive) |
-| `max_age` | number | Maximum age (inclusive) |
-| `min_gender_probability` | float | Minimum gender confidence score |
-| `max_gender_probability` | float | Maximum gender confidence score |
-| `sort_by` | `age` \| `created_at` \| `gender_probability` | Field to sort by |
-| `sort_order` | `asc` \| `desc` | Sort direction (default: `desc`) |
-| `page` | number | Page number (default: 1) |
-| `limit` | number | Results per page (default: 10, max: 50) |
+| Parameter                | Type                                          | Description                               |
+| ------------------------ | --------------------------------------------- | ----------------------------------------- |
+| `gender`                 | `male` \| `female`                            | Filter by gender                          |
+| `age_group`              | `child` \| `teenager` \| `adult` \| `senior`  | Filter by age group                       |
+| `country_id`             | string                                        | ISO 3166-1 alpha-2 code (e.g. `NG`, `US`) |
+| `min_age`                | number                                        | Minimum age (inclusive)                   |
+| `max_age`                | number                                        | Maximum age (inclusive)                   |
+| `min_gender_probability` | float                                         | Minimum gender confidence score           |
+| `max_gender_probability` | float                                         | Maximum gender confidence score           |
+| `sort_by`                | `age` \| `created_at` \| `gender_probability` | Field to sort by                          |
+| `sort_order`             | `asc` \| `desc`                               | Sort direction (default: `desc`)          |
+| `page`                   | number                                        | Page number (default: 1)                  |
+| `limit`                  | number                                        | Results per page (default: 10, max: 50)   |
 
 **Example:**
 
@@ -140,11 +140,11 @@ Natural language query endpoint. Parses a plain English query string and convert
 
 **Query parameters:**
 
-| Parameter | Description |
-|---|---|
-| `q` | Plain English query string (required) |
-| `page` | Can also be embedded in `q` as `page 2` |
-| `limit` | Can also be embedded in `q` as `show 20` or `take 20` |
+| Parameter | Description                                           |
+| --------- | ----------------------------------------------------- |
+| `q`       | Plain English query string (required)                 |
+| `page`    | Can also be embedded in `q` as `page 2`               |
+| `limit`   | Can also be embedded in `q` as `show 20` or `take 20` |
 
 **Example:**
 
@@ -165,6 +165,7 @@ GET /api/profiles/search?q=young males from nigeria page 2
 ```
 
 **Response 422 — uninterpretable query:**
+
 ```json
 {
   "status": "error",
@@ -210,6 +211,7 @@ The `/api/profiles/search` endpoint uses a rule-based parser — no AI or LLMs. 
 ### How it works
 
 The query is tokenized by whitespace:
+
 ```
 "young males from nigeria page 2" → ["young", "males", "from", "nigeria", "page", "2"]
 ```
@@ -227,16 +229,17 @@ Checks each token against two fixed sets.
 **Male tokens:** `male`, `males`, `man`, `men`, `boy`, `boys`
 
 **Rules:**
+
 - If only female tokens found → `gender: "female"`
 - If only male tokens found → `gender: "male"`
 - If both found (e.g. `"males and females"`, `"male or female"`) → no gender filter applied (cancelled out)
 
 **Examples:**
 
-| Query | Result |
-|---|---|
-| `young males` | `gender: "male"` |
-| `females above 30` | `gender: "female"` |
+| Query                       | Result               |
+| --------------------------- | -------------------- |
+| `young males`               | `gender: "male"`     |
+| `females above 30`          | `gender: "female"`   |
 | `male and female teenagers` | _(no gender filter)_ |
 
 ---
@@ -247,31 +250,31 @@ Checks tokens against named age group sets and numeric age anchor patterns.
 
 **Token sets:**
 
-| Set | Tokens | Maps to |
-|---|---|---|
-| Young | `young`, `youth`, `youths` | `min_age: 16, max_age: 24` |
-| Child | `child`, `children`, `kid`, `kids` | `age_group: "child"` |
-| Teenager | `teen`, `teens`, `teenage`, `teenager`, `teenagers` | `age_group: "teenager"` |
-| Adult | `adult`, `adults` | `age_group: "adult"` |
-| Senior | `senior`, `seniors`, `elderly`, `old` | `age_group: "senior"` |
+| Set      | Tokens                                              | Maps to                    |
+| -------- | --------------------------------------------------- | -------------------------- |
+| Young    | `young`, `youth`, `youths`                          | `min_age: 16, max_age: 24` |
+| Child    | `child`, `children`, `kid`, `kids`                  | `age_group: "child"`       |
+| Teenager | `teen`, `teens`, `teenage`, `teenager`, `teenagers` | `age_group: "teenager"`    |
+| Adult    | `adult`, `adults`                                   | `age_group: "adult"`       |
+| Senior   | `senior`, `seniors`, `elderly`, `old`               | `age_group: "senior"`      |
 
 **Numeric anchors** — looks for an anchor word followed immediately by a number:
 
-| Anchor words | Effect |
-|---|---|
-| `above`, `over`, `older`, `minimum`, `min` | `min_age: N` |
+| Anchor words                                  | Effect       |
+| --------------------------------------------- | ------------ |
+| `above`, `over`, `older`, `minimum`, `min`    | `min_age: N` |
 | `below`, `under`, `younger`, `maximum`, `max` | `max_age: N` |
 
 Explicit numeric anchors override the `young` defaults. So `"young people above 20"` produces `min_age: 20` (not 16).
 
 **Examples:**
 
-| Query | Result |
-|---|---|
-| `young males` | `min_age: 16, max_age: 24` |
-| `females above 30` | `min_age: 30` |
+| Query                | Result                               |
+| -------------------- | ------------------------------------ |
+| `young males`        | `min_age: 16, max_age: 24`           |
+| `females above 30`   | `min_age: 30`                        |
 | `teenagers above 17` | `age_group: "teenager", min_age: 17` |
-| `people under 10` | `max_age: 10` |
+| `people under 10`    | `max_age: 10`                        |
 
 ---
 
@@ -290,11 +293,11 @@ Multi-word country names are handled by trying the longest possible match first,
 
 **Examples:**
 
-| Query | Result |
-|---|---|
-| `people from angola` | `country_id: "AO"` |
+| Query                    | Result             |
+| ------------------------ | ------------------ |
+| `people from angola`     | `country_id: "AO"` |
 | `adult males from kenya` | `country_id: "KE"` |
-| `women in south africa` | `country_id: "ZA"` |
+| `women in south africa`  | `country_id: "ZA"` |
 
 ---
 
@@ -302,33 +305,34 @@ Multi-word country names are handled by trying the longest possible match first,
 
 Looks for pagination anchor words followed by a number.
 
-| Anchor | Effect |
-|---|---|
-| `page` | `page: N` |
+| Anchor                  | Effect                    |
+| ----------------------- | ------------------------- |
+| `page`                  | `page: N`                 |
 | `limit`, `show`, `take` | `limit: N` (capped at 50) |
 
 **Examples:**
 
-| Query fragment | Result |
-|---|---|
-| `page 2` | `page: 2` |
-| `show 20` | `limit: 20` |
-| `take 5` | `limit: 5` |
+| Query fragment | Result      |
+| -------------- | ----------- |
+| `page 2`       | `page: 2`   |
+| `show 20`      | `limit: 20` |
+| `take 5`       | `limit: 5`  |
 
 ---
 
 ### Query Examples
 
-| Query | Parsed filters |
-|---|---|
-| `young males` | `gender: male, min_age: 16, max_age: 24` |
-| `females above 30` | `gender: female, min_age: 30` |
-| `people from angola` | `country_id: AO` |
-| `adult males from kenya` | `gender: male, age_group: adult, country_id: KE` |
-| `male and female teenagers above 17` | `age_group: teenager, min_age: 17` |
-| `young males from nigeria page 2` | `gender: male, min_age: 16, max_age: 24, country_id: NG, page: 2` |
+| Query                                | Parsed filters                                                    |
+| ------------------------------------ | ----------------------------------------------------------------- |
+| `young males`                        | `gender: male, min_age: 16, max_age: 24`                          |
+| `females above 30`                   | `gender: female, min_age: 30`                                     |
+| `people from angola`                 | `country_id: AO`                                                  |
+| `adult males from kenya`             | `gender: male, age_group: adult, country_id: KE`                  |
+| `male and female teenagers above 17` | `age_group: teenager, min_age: 17`                                |
+| `young males from nigeria page 2`    | `gender: male, min_age: 16, max_age: 24, country_id: NG, page: 2` |
 
 If no recognisable filter is extracted from the query, the API returns:
+
 ```json
 { "status": "error", "message": "Unable to interpret query" }
 ```
@@ -365,10 +369,10 @@ All errors follow this structure:
 { "status": "error", "message": "<error message>" }
 ```
 
-| Status | Meaning |
-|---|---|
-| 400 | Missing or empty parameter |
-| 404 | Profile not found |
-| 422 | Invalid parameter type or uninterpretable query |
-| 500 | Internal server error |
-| 502 | External API (Genderize / Agify / Nationalize) returned an invalid response |
+| Status | Meaning                                                                     |
+| ------ | --------------------------------------------------------------------------- |
+| 400    | Missing or empty parameter                                                  |
+| 404    | Profile not found                                                           |
+| 422    | Invalid parameter type or uninterpretable query                             |
+| 500    | Internal server error                                                       |
+| 502    | External API (Genderize / Agify / Nationalize) returned an invalid response |

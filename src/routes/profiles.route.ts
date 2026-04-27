@@ -1,5 +1,11 @@
 import { Router } from "express";
-import { createProfile, deleteProfile, getAllProfiles, getProfile, searchForProfiles } from "../controllers/profiles.controller";
+import {
+  createProfile,
+  deleteProfile,
+  getAllProfiles,
+  getProfile,
+  searchForProfiles,
+} from "../controllers/profiles.controller";
 
 const router = Router();
 
