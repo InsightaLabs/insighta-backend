@@ -1,378 +1,386 @@
-# Classifications API
+# Insighta Labs+ — Backend
 
-A REST API that accepts a name, fetches classification data from three external APIs (Genderize, Agify, Nationalize), stores the result in a PostgreSQL database, and exposes endpoints to query and manage that data — including a natural language search endpoint.
+A REST API that classifies names by gender, age, and nationality using three external APIs (Genderize, Agify, Nationalize), stores results in PostgreSQL, and exposes a full query interface with natural language search, role-based access control, GitHub OAuth, and CSV export.
+
+---
 
 ## Tech Stack
 
 - Node.js + TypeScript
-- Express
+- Express 5
 - PostgreSQL (`pg`)
+- JWT (`jsonwebtoken`) + opaque refresh tokens
 - UUID v7 for primary keys
+- `csv-stringify` for streaming CSV export
+- `express-rate-limit` for rate limiting
+- Vitest + Supertest for testing
 
-## Getting Started
+---
+
+## System Architecture
+
+```
+src/
+├── index.ts                  # App entry point — mounts routes, middleware, starts server
+├── types.ts                  # Shared TypeScript types
+├── utils.ts                  # Country map, type guards, NLQ parser
+├── controllers/
+│   ├── auth.controller.ts    # GitHub OAuth, token issuance, refresh, logout, me
+│   └── profiles.controller.ts# CRUD, search, CSV export
+├── routes/
+│   ├── profiles.route.ts     # Legacy unversioned routes (no auth)
+│   └── v1/
+│       ├── auth.route.ts     # /api/v1/auth/*
+│       └── profiles.route.ts # /api/v1/profiles/* (auth + RBAC enforced)
+├── middleware/
+│   ├── authenticate.ts       # JWT verification → populates req.user
+│   ├── authorize.ts          # Role-based access control (analyst < admin)
+│   ├── csrf.ts               # CSRF protection for browser clients
+│   └── rate-limiting.ts      # Auth limiter (10/15min), app limiter (100/15min)
+└── db/
+    └── index.ts              # DatabaseClient — all SQL queries
+```
+
+### Request lifecycle (v1 routes)
+
+```
+Request
+  → CORS
+  → express.json()
+  → Rate limiter (authLimiter or appLimiter)
+  → authenticate    (verifies JWT, sets req.user)
+  → csrfProtection  (skipped for Bearer/CLI clients)
+  → authorize(role) (checks req.user.role against required role)
+  → Controller
+  → Response
+```
+
+---
+
+## Authentication Flow
+
+This backend supports two clients: a **CLI** and a **web portal**. Both use the same GitHub OAuth flow with PKCE, but the callback response differs based on the `x-client-type` header.
+
+### GitHub OAuth with PKCE
+
+1. Client calls `GET /api/v1/auth/github`
+2. Backend generates a `code_verifier` (random 32 bytes, base64url), derives a `code_challenge` (SHA-256 hash), generates a `state` nonce, stores `{ codeVerifier, expiresAt }` keyed by `state` in an in-memory map, and redirects to GitHub
+3. GitHub redirects back to `GET /api/v1/auth/github/callback?code=...&state=...`
+4. Backend validates `state` (must exist in store, must not be expired), deletes it (one-time use), then exchanges `code + code_verifier` for a GitHub access token
+5. Backend fetches the GitHub user profile, upserts the user in the `users` table (preserving existing role), issues tokens
+
+### Token issuance
+
+| Token | Type | Expiry | Storage |
+|---|---|---|---|
+| Access token | JWT (HS256) | 15 minutes | Client memory / Authorization header |
+| Refresh token | Opaque (random 32 bytes hex) | 7 days | Hashed (SHA-256) in `sessions` table |
+
+**CLI path** (`x-client-type: cli` header present):
+- Returns `{ access_token, refresh_token, token_type, expires_in }` as JSON
+
+**Browser path** (no `x-client-type: cli` header):
+- Sets `refresh_token` as an `HttpOnly; SameSite=Strict` cookie
+- Sets `csrf_token` as a readable (non-HttpOnly) cookie for CSRF double-submit
+- Redirects to `WEB_PORTAL_URL/dashboard?access_token=...`
+
+### Token refresh
+
+`POST /api/v1/auth/refresh` — body: `{ refresh_token }`
+
+1. Hash the incoming token, look up the session
+2. Validate: not revoked, not expired, user still exists
+3. Revoke the old session (rotation — prevents replay)
+4. Issue a new access token + new refresh token
+5. Return both
+
+### Logout
+
+`POST /api/v1/auth/logout` — body: `{ refresh_token }`
+
+Hashes the token and marks the session as `revoked = true`. Idempotent — returns 200 even if the token is already revoked or doesn't exist (no information leakage).
+
+---
+
+## Role-Based Access Control
+
+Two roles exist: `analyst` and `admin`. `admin` is a strict superset of `analyst`.
+
+| Role | Can do |
+|---|---|
+| `analyst` | GET profiles, search, export CSV |
+| `admin` | Everything analyst can do + create profiles, delete profiles |
+
+New users are assigned `analyst` by default. Role is stored in the `users` table and embedded in the JWT payload (`{ userId, role }`).
+
+### Middleware chain for protected routes
+
+```
+authenticate → authorize("analyst" | "admin") → controller
+```
+
+`authenticate` verifies the JWT and populates `req.user = { userId, role }`. `authorize` reads `req.user.role` and compares it against a role hierarchy array `["analyst", "admin"]` using index comparison — an admin always passes an analyst check.
+
+---
+
+## CSRF Protection
+
+Applied to all `/api/v1/profiles/*` routes. Uses the double-submit cookie pattern:
+
+- On login (browser path), the backend sets a `csrf_token` cookie (readable by JS)
+- The web portal reads this cookie and sends it back as an `X-CSRF-Token` header on every mutating request
+- The middleware compares `req.headers['x-csrf-token']` against `req.cookies['csrf_token']`
+- **Bypass:** if the request has an `Authorization: Bearer ...` header (CLI), CSRF is skipped entirely
+
+---
+
+## Rate Limiting
+
+| Limiter | Applied to | Limit |
+|---|---|---|
+| `authLimiter` | `/api/v1/auth/*` | 10 requests / 15 min |
+| `appLimiter` | `/api/v1/profiles/*` | 100 requests / 15 min |
+
+Exceeding the limit returns `429 Too Many Requests`.
+
+---
+
+## API Reference
+
+### Auth
+
+#### `GET /api/v1/auth/github`
+Initiates GitHub OAuth. Redirects to GitHub with PKCE parameters.
+
+#### `GET /api/v1/auth/github/callback`
+GitHub redirects here after authorization. Validates state, exchanges code, upserts user, issues tokens.
+
+#### `POST /api/v1/auth/refresh`
+```json
+{ "refresh_token": "<opaque token>" }
+```
+Returns new `access_token` and `refresh_token`. Old refresh token is revoked.
+
+#### `POST /api/v1/auth/logout`
+```json
+{ "refresh_token": "<opaque token>" }
+```
+Revokes the session. Returns 200 regardless.
+
+#### `GET /api/v1/auth/me`
+Requires `Authorization: Bearer <access_token>`. Returns the authenticated user's profile (id, username, email, role, created_at).
+
+---
+
+### Profiles (v1 — all require authentication)
+
+All v1 profile endpoints require a valid JWT in the `Authorization: Bearer` header.
+
+#### `POST /api/v1/profiles` — admin only
+Creates a profile by classifying a name via Genderize, Agify, and Nationalize. Returns 201 on creation, 200 if the name already exists.
+
+```json
+{ "name": "ella" }
+```
+
+#### `GET /api/v1/profiles` — analyst+
+Returns paginated profiles. All filters from the legacy endpoint are supported.
+
+**Response shape (v1):**
+```json
+{
+  "status": "success",
+  "data": [...],
+  "meta": {
+    "page": 1,
+    "limit": 10,
+    "total": 2026,
+    "totalPages": 203
+  }
+}
+```
+
+**Query parameters:**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `gender` | `male` \| `female` | Filter by gender |
+| `age_group` | `child` \| `teenager` \| `adult` \| `senior` | Filter by age group |
+| `country_id` | string | ISO 3166-1 alpha-2 (e.g. `NG`) |
+| `min_age` | number | Minimum age inclusive |
+| `max_age` | number | Maximum age inclusive |
+| `min_gender_probability` | float | Minimum gender confidence |
+| `min_country_probability` | float | Minimum nationality confidence |
+| `sort_by` | `age` \| `created_at` \| `gender_probability` | Sort field |
+| `order` | `asc` \| `desc` | Sort direction |
+| `page` | number | Page number (default: 1) |
+| `limit` | number | Results per page (default: 10, max: 50) |
+
+#### `GET /api/v1/profiles/search` — analyst+
+Natural language search. See [Natural Language Parsing](#natural-language-parsing) below.
+
+```
+GET /api/v1/profiles/search?q=young males from nigeria page 2
+```
+
+#### `GET /api/v1/profiles/export` — analyst+
+Streams a CSV file of all matching profiles. Accepts the same filter and sort parameters as `GET /api/v1/profiles` (no pagination — exports all matching records up to 1000).
+
+Response headers:
+```
+Content-Type: text/csv
+Content-Disposition: attachment; filename="profiles.csv"
+```
+
+#### `GET /api/v1/profiles/:id` — analyst+
+Returns a single profile by UUID.
+
+#### `DELETE /api/v1/profiles/:id` — admin only
+Deletes a profile. Returns `204 No Content`.
+
+---
+
+### Legacy routes (no auth)
+
+The original unversioned routes remain intact at `/api/profiles/*` with no authentication or rate limiting. These are preserved from Stage 2.
+
+---
+
+## Database Schema
+
+### `classifications`
+Stores name classification results from the external APIs.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID | Primary key, UUID v7 |
+| `name` | VARCHAR | Unique (case-insensitive conflict) |
+| `gender` | VARCHAR | `male` or `female` |
+| `gender_probability` | FLOAT | 0–1 |
+| `age` | INT | From Agify |
+| `age_group` | VARCHAR | `child`, `teenager`, `adult`, `senior` |
+| `country_id` | VARCHAR | ISO alpha-2 |
+| `country_name` | VARCHAR | Full country name |
+| `country_probability` | FLOAT | 0–1 |
+| `created_at` | TIMESTAMP | Auto |
+
+### `users`
+Stores authenticated users created via GitHub OAuth.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID | Primary key |
+| `github_id` | VARCHAR | Unique, from GitHub |
+| `username` | VARCHAR | GitHub login |
+| `email` | VARCHAR | Nullable |
+| `role` | VARCHAR | `analyst` (default) or `admin` |
+| `created_at` | TIMESTAMP | Auto |
+
+### `sessions`
+Stores hashed refresh tokens.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID | Primary key |
+| `user_id` | UUID | FK → users(id), CASCADE DELETE |
+| `token_hash` | VARCHAR | SHA-256 hash of the raw refresh token |
+| `expires_at` | TIMESTAMP | 7 days from creation |
+| `revoked` | BOOLEAN | Default false |
+| `created_at` | TIMESTAMP | Auto |
+
+Indexed on `token_hash` and `user_id`.
+
+---
+
+## Natural Language Parsing
+
+The `/api/v1/profiles/search` endpoint uses a rule-based parser — no AI or LLMs. The query is lowercased, tokenized by whitespace, and run through four independent passes that each extract a different category of filters. Results are merged.
+
+### Gender Pass
+Checks tokens against fixed male/female sets. If both are present, gender filter is cancelled (no filter applied).
+
+### Age Group Pass
+Maps named tokens (`young`, `adult`, `teenager`, `senior`, `child`) to age filters. Numeric anchors (`above N`, `below N`, `over N`, `under N`) extract `min_age` / `max_age`. Explicit numeric anchors override `young` defaults.
+
+### Nationality Pass
+Looks for anchor words (`from`, `in`, `of`) then tries to match the following tokens against a reverse ISO 3166-1 country name map, longest match first.
+
+### Pagination Pass
+Looks for `page N`, `show N`, `take N`, `limit N` patterns.
+
+**Examples:**
+
+| Query | Parsed filters |
+|---|---|
+| `young males` | `gender: male, min_age: 16, max_age: 24` |
+| `females above 30` | `gender: female, min_age: 30` |
+| `adult males from kenya` | `gender: male, age_group: adult, country_id: KE` |
+| `young males from nigeria page 2` | `gender: male, min_age: 16, max_age: 24, country_id: NG, page: 2` |
+
+If no recognisable filter is extracted, returns `422 Unable to interpret query`.
+
+---
+
+## Setup
 
 ### Prerequisites
 
 - Node.js 18+
 - PostgreSQL
 
-### Setup
+### Environment variables
 
-1. Clone the repo and install dependencies:
+```env
+CLASSIFY_DB_URL=postgresql://user:password@localhost:5432/db
+GITHUB_CLIENT_ID=...
+GITHUB_SECRET=...
+GITHUB_CALLBACK_URL=http://localhost:3001/api/v1/auth/github/callback
+JWT_SECRET=...
+WEB_PORTAL_URL=http://localhost:3000
+```
+
+### Install and run
 
 ```bash
 pnpm install
-```
 
-2. Create a `.env` file in the root:
+# Run migrations
+psql $CLASSIFY_DB_URL -f migrations/001_create_classifications_table.sql
+psql $CLASSIFY_DB_URL -f migrations/002_create_classifications_table.sql
+psql $CLASSIFY_DB_URL -f migrations/003_create_users_and_sessions.sql
 
-```env
-CLASSIFY_DATABASE_URL=postgresql://user:password@localhost:5432/classifications_db
-```
-
-3. Run the migration:
-
-```bash
-psql $CLASSIFY_DATABASE_URL -f migrations/002_create_classifications_table.sql
-```
-
-4. (Optional) Seed the database:
-
-```bash
+# Seed profiles (optional)
 pnpm tsx scripts/seed.ts
-```
 
-5. Start the dev server:
-
-```bash
+# Dev server
 pnpm dev
 ```
 
----
+### Tests
 
-## API Reference
-
-### POST /api/profiles
-
-Creates a new profile by classifying a name using three external APIs. If the name already exists (case-sensitive), returns the existing record.
-
-**Request body:**
-
-```json
-{ "name": "ella" }
+```bash
+pnpm test
 ```
 
-**Response 201 — created:**
-
-```json
-{
-  "status": "success",
-  "data": {
-    "id": "019612a3-...",
-    "name": "ella",
-    "gender": "female",
-    "gender_probability": 0.99,
-    "age": 46,
-    "age_group": "adult",
-    "country_id": "US",
-    "country_name": "United States",
-    "country_probability": 0.85,
-    "created_at": "2026-04-01T12:00:00Z"
-  }
-}
-```
-
-**Response 200 — already exists:**
-
-```json
-{
-  "status": "success",
-  "message": "Profile already exists",
-  "data": { ... }
-}
-```
-
----
-
-### GET /api/profiles
-
-Returns profiles with optional filtering, sorting, and pagination.
-
-**Query parameters (all optional):**
-
-| Parameter                | Type                                          | Description                               |
-| ------------------------ | --------------------------------------------- | ----------------------------------------- |
-| `gender`                 | `male` \| `female`                            | Filter by gender                          |
-| `age_group`              | `child` \| `teenager` \| `adult` \| `senior`  | Filter by age group                       |
-| `country_id`             | string                                        | ISO 3166-1 alpha-2 code (e.g. `NG`, `US`) |
-| `min_age`                | number                                        | Minimum age (inclusive)                   |
-| `max_age`                | number                                        | Maximum age (inclusive)                   |
-| `min_gender_probability` | float                                         | Minimum gender confidence score           |
-| `max_gender_probability` | float                                         | Maximum gender confidence score           |
-| `sort_by`                | `age` \| `created_at` \| `gender_probability` | Field to sort by                          |
-| `sort_order`             | `asc` \| `desc`                               | Sort direction (default: `desc`)          |
-| `page`                   | number                                        | Page number (default: 1)                  |
-| `limit`                  | number                                        | Results per page (default: 10, max: 50)   |
-
-**Example:**
-
-```
-GET /api/profiles?gender=male&country_id=NG&sort_by=age&sort_order=asc&page=1&limit=20
-```
-
-**Response 200:**
-
-```json
-{
-  "status": "success",
-  "page": 1,
-  "limit": 20,
-  "total": 2026,
-  "data": [ ... ]
-}
-```
-
----
-
-### GET /api/profiles/search
-
-Natural language query endpoint. Parses a plain English query string and converts it into filters.
-
-**Query parameters:**
-
-| Parameter | Description                                           |
-| --------- | ----------------------------------------------------- |
-| `q`       | Plain English query string (required)                 |
-| `page`    | Can also be embedded in `q` as `page 2`               |
-| `limit`   | Can also be embedded in `q` as `show 20` or `take 20` |
-
-**Example:**
-
-```
-GET /api/profiles/search?q=young males from nigeria page 2
-```
-
-**Response 200:**
-
-```json
-{
-  "status": "success",
-  "page": 2,
-  "limit": 10,
-  "total": 2026,
-  "data": [ ... ]
-}
-```
-
-**Response 422 — uninterpretable query:**
-
-```json
-{
-  "status": "error",
-  "message": "Unable to interpret query"
-}
-```
-
----
-
-### GET /api/profiles/:id
-
-Returns a single profile by UUID.
-
-**Response 200:**
-
-```json
-{
-  "status": "success",
-  "data": { ... }
-}
-```
-
----
-
-### DELETE /api/profiles/:id
-
-Deletes a profile by UUID. Returns `204 No Content` on success.
-
----
-
-## Classification Rules
-
-- **Age group** (from Agify): `0–12` → child, `13–19` → teenager, `20–59` → adult, `60+` → senior
-- **Nationality** (from Nationalize): country with the highest probability is selected. Country name is resolved from a local ISO 3166-1 static map.
-- **Gender** (from Genderize): if `gender` is null or `count` is 0, the request is rejected with 502.
-
----
-
-## Natural Language Parsing
-
-The `/api/profiles/search` endpoint uses a rule-based parser — no AI or LLMs. The query string is lowercased, trimmed, and split into tokens. Four independent passes run against the token list, each extracting a different category of filters.
-
-### How it works
-
-The query is tokenized by whitespace:
-
-```
-"young males from nigeria page 2" → ["young", "males", "from", "nigeria", "page", "2"]
-```
-
-Each pass scans the full token list independently and returns a partial `AllProfileQueryOptions` object. The results are merged.
-
----
-
-### Gender Pass
-
-Checks each token against two fixed sets.
-
-**Female tokens:** `female`, `females`, `woman`, `women`, `girl`, `girls`, `babe`, `babes`
-
-**Male tokens:** `male`, `males`, `man`, `men`, `boy`, `boys`
-
-**Rules:**
-
-- If only female tokens found → `gender: "female"`
-- If only male tokens found → `gender: "male"`
-- If both found (e.g. `"males and females"`, `"male or female"`) → no gender filter applied (cancelled out)
-
-**Examples:**
-
-| Query                       | Result               |
-| --------------------------- | -------------------- |
-| `young males`               | `gender: "male"`     |
-| `females above 30`          | `gender: "female"`   |
-| `male and female teenagers` | _(no gender filter)_ |
-
----
-
-### Age Group Pass
-
-Checks tokens against named age group sets and numeric age anchor patterns.
-
-**Token sets:**
-
-| Set      | Tokens                                              | Maps to                    |
-| -------- | --------------------------------------------------- | -------------------------- |
-| Young    | `young`, `youth`, `youths`                          | `min_age: 16, max_age: 24` |
-| Child    | `child`, `children`, `kid`, `kids`                  | `age_group: "child"`       |
-| Teenager | `teen`, `teens`, `teenage`, `teenager`, `teenagers` | `age_group: "teenager"`    |
-| Adult    | `adult`, `adults`                                   | `age_group: "adult"`       |
-| Senior   | `senior`, `seniors`, `elderly`, `old`               | `age_group: "senior"`      |
-
-**Numeric anchors** — looks for an anchor word followed immediately by a number:
-
-| Anchor words                                  | Effect       |
-| --------------------------------------------- | ------------ |
-| `above`, `over`, `older`, `minimum`, `min`    | `min_age: N` |
-| `below`, `under`, `younger`, `maximum`, `max` | `max_age: N` |
-
-Explicit numeric anchors override the `young` defaults. So `"young people above 20"` produces `min_age: 20` (not 16).
-
-**Examples:**
-
-| Query                | Result                               |
-| -------------------- | ------------------------------------ |
-| `young males`        | `min_age: 16, max_age: 24`           |
-| `females above 30`   | `min_age: 30`                        |
-| `teenagers above 17` | `age_group: "teenager", min_age: 17` |
-| `people under 10`    | `max_age: 10`                        |
-
----
-
-### Nationality Pass
-
-Looks for an anchor word (`from`, `in`, `of`) and attempts to match everything after it against a reverse country name map (built at startup from the bundled ISO 3166-1 dataset).
-
-Multi-word country names are handled by trying the longest possible match first, then shrinking:
-
-```
-"from south africa" → tries "south africa" → match → country_id: "ZA"
-"from nigeria"      → tries "nigeria"       → match → country_id: "NG"
-```
-
-**Anchor words:** `from`, `in`, `of`
-
-**Examples:**
-
-| Query                    | Result             |
-| ------------------------ | ------------------ |
-| `people from angola`     | `country_id: "AO"` |
-| `adult males from kenya` | `country_id: "KE"` |
-| `women in south africa`  | `country_id: "ZA"` |
-
----
-
-### Pagination Pass
-
-Looks for pagination anchor words followed by a number.
-
-| Anchor                  | Effect                    |
-| ----------------------- | ------------------------- |
-| `page`                  | `page: N`                 |
-| `limit`, `show`, `take` | `limit: N` (capped at 50) |
-
-**Examples:**
-
-| Query fragment | Result      |
-| -------------- | ----------- |
-| `page 2`       | `page: 2`   |
-| `show 20`      | `limit: 20` |
-| `take 5`       | `limit: 5`  |
-
----
-
-### Query Examples
-
-| Query                                | Parsed filters                                                    |
-| ------------------------------------ | ----------------------------------------------------------------- |
-| `young males`                        | `gender: male, min_age: 16, max_age: 24`                          |
-| `females above 30`                   | `gender: female, min_age: 30`                                     |
-| `people from angola`                 | `country_id: AO`                                                  |
-| `adult males from kenya`             | `gender: male, age_group: adult, country_id: KE`                  |
-| `male and female teenagers above 17` | `age_group: teenager, min_age: 17`                                |
-| `young males from nigeria page 2`    | `gender: male, min_age: 16, max_age: 24, country_id: NG, page: 2` |
-
-If no recognisable filter is extracted from the query, the API returns:
-
-```json
-{ "status": "error", "message": "Unable to interpret query" }
-```
-
----
-
-## Limitations
-
-- **No synonym resolution.** Words like `"elderly"` map to `age_group: senior`, but `"aged"`, `"mature"`, `"pensioner"` are not recognised.
-
-- **No negation.** Queries like `"not from nigeria"` or `"everyone except males"` are not handled. The negation is silently ignored and the positive filter is applied.
-
-- **Country matching is exact (after lowercasing).** `"Ivory Coast"` will not match `"Côte d'Ivoire"` — the query must use the official ISO country name as stored in the dataset. Common aliases and alternate spellings are not supported. Countries with comma-inverted names in the ISO standard (e.g. `"Congo, Democratic Republic of the"`) cannot be matched from natural language at all — querying `"from dr congo"` or `"from democratic republic of congo"` will return no country filter.
-
-- **`"young"` is a special mapping, not a stored age group.** It maps to `min_age: 16, max_age: 24` for query purposes only. There is no `"young"` value in the database.
-
-- **Gender cancellation is silent.** When both male and female tokens appear, no gender filter is applied and no warning is returned. The query proceeds with other filters intact.
-
-- **Numeric anchors only look one token ahead.** `"above thirty"` (word form) is not recognised — only `"above 30"` (digit form) works.
-
-- **No compound age ranges from natural language.** `"between 20 and 40"` is not parsed. Use `min_age` and `max_age` query params on `GET /api/profiles` for that.
-
-- **Pagination in the query string is additive but not validated against filters.** Requesting `page 99` on a result set with 2 pages will return an empty data array with no error.
-
-- **The `sort_by` and `sort_order` fields are not parsed from natural language.** Phrases like `"sorted by age"` or `"oldest first"` are not supported in the search endpoint. Use `GET /api/profiles` with explicit `sort_by` and `sort_order` params for sorting.
+Tests require a running local PostgreSQL instance seeded with the 2026 profiles. DB tests run against the real database. HTTP tests use isolated Express apps with no rate limiting or CSRF to keep them fast and deterministic.
 
 ---
 
 ## Error Responses
 
-All errors follow this structure:
+All errors follow this shape:
 
 ```json
-{ "status": "error", "message": "<error message>" }
+{ "status": "error", "message": "<description>" }
 ```
 
-| Status | Meaning                                                                     |
-| ------ | --------------------------------------------------------------------------- |
-| 400    | Missing or empty parameter                                                  |
-| 404    | Profile not found                                                           |
-| 422    | Invalid parameter type or uninterpretable query                             |
-| 500    | Internal server error                                                       |
-| 502    | External API (Genderize / Agify / Nationalize) returned an invalid response |
+| Status | Meaning |
+|---|---|
+| 400 | Missing or empty parameter |
+| 401 | Missing, expired, or invalid access token |
+| 403 | Insufficient role / invalid CSRF token |
+| 404 | Resource not found |
+| 422 | Invalid parameter value or uninterpretable query |
+| 429 | Rate limit exceeded |
+| 500 | Internal server error |
+| 502 | External API (Genderize / Agify / Nationalize) returned an invalid response |
