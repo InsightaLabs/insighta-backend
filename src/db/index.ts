@@ -5,6 +5,8 @@ import {
   AllProfileQueryOptions,
   Classification,
   Gender,
+  User,
+  Session,
 } from "../types";
 
 config();
@@ -147,7 +149,7 @@ export class DatabaseClient {
     records: Classification[];
     // count: number;
     page: number;
-    limit: number,
+    limit: number;
     total: number;
   }> {
     const conditions: string[] = [];
@@ -155,7 +157,9 @@ export class DatabaseClient {
     let paramIndex = 1;
 
     const sortBy = options.sort_by ? options.sort_by : undefined;
-    const sortOrder = options.sort_order ? options.sort_order.toUpperCase() : undefined;
+    const sortOrder = options.sort_order
+      ? options.sort_order.toUpperCase()
+      : undefined;
 
     const limit = options.limit && options.limit <= 50 ? options.limit : 10;
     const page = options.page ?? 1;
@@ -210,33 +214,34 @@ export class DatabaseClient {
 
     // Have to make this into sortClause, because it is possible to be undefined
     // unlike pagination and limit which have defaults
-    const sortClause = (sortBy && sortOrder) ? ` ORDER BY ${sortBy} ${sortOrder} `: ``;
+    const sortClause =
+      sortBy && sortOrder ? ` ORDER BY ${sortBy} ${sortOrder} ` : ``;
 
     const query = `
-      SELECT id, name, gender, gender_probability, age, age_group, country_id, country_name, country_probability, created_at
+      SELECT 
+        id, name, gender, gender_probability, age, age_group, 
+        country_id, country_name, country_probability, created_at,
+        COUNT(*) OVER() AS total_count
       FROM classifications
       ${whereClause}
       ${sortClause}
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
 
-    const totalResult = await this.pool.query(
-      `SELECT COUNT(*) FROM classifications`
-    );
-    const total = parseInt(totalResult.rows[0].count);
-
+    // const total = parseInt(totalResult.rows[0].count);
 
     values.push(limit, offset);
 
     const result = await this.pool.query(query, values);
-    // const total = result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
+    const total = result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
 
+    const data = result.rows.map(({ total_count, ...row }) => row);
     return {
-      records: result.rows,
+      records: data,
       // count: result.rowCount ?? 0,
       page,
       limit,
-      total
+      total,
     };
   }
 
@@ -256,5 +261,66 @@ export class DatabaseClient {
     } catch (err) {
       throw err;
     }
+  }
+
+  // ─── Auth methods ────────────────────────────────────────────────────────
+
+  async upsertUser(user: {
+    id: string;
+    github_id: string;
+    username: string;
+    email: string | null;
+  }): Promise<User> {
+    const result = await this.pool.query<User>(
+      `INSERT INTO users (id, github_id, username, email)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (github_id) DO UPDATE
+         SET username = EXCLUDED.username,
+             email = EXCLUDED.email
+       RETURNING id, github_id, username, email, role, created_at`,
+      [user.id, user.github_id, user.username, user.email],
+    );
+    return result.rows[0];
+  }
+
+  async createSession(session: {
+    id: string;
+    user_id: string;
+    token_hash: string;
+    expires_at: Date;
+  }): Promise<Session> {
+    const result = await this.pool.query<Session>(
+      `INSERT INTO sessions (id, user_id, token_hash, expires_at)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, user_id, token_hash, expires_at, revoked, created_at`,
+      [session.id, session.user_id, session.token_hash, session.expires_at],
+    );
+    return result.rows[0];
+  }
+
+  async getSessionByTokenHash(tokenHash: string): Promise<Session | null> {
+    const result = await this.pool.query<Session>(
+      `SELECT id, user_id, token_hash, expires_at, revoked, created_at
+       FROM sessions
+       WHERE token_hash = $1`,
+      [tokenHash],
+    );
+    return result.rowCount && result.rowCount > 0 ? result.rows[0] : null;
+  }
+
+  async revokeSession(tokenHash: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE sessions SET revoked = TRUE WHERE token_hash = $1`,
+      [tokenHash],
+    );
+  }
+
+  async getUserById(id: string): Promise<User | null> {
+    const result = await this.pool.query<User>(
+      `SELECT id, github_id, username, email, role, created_at
+       FROM users WHERE id = $1`,
+      [id],
+    );
+    return result.rowCount && result.rowCount > 0 ? result.rows[0] : null;
   }
 }

@@ -1,5 +1,11 @@
-import { AgeGroup, AllProfileQueryOptions, Gender, SortField, SortOrder } from "./types";
-import data from "../all_countries.json"
+import {
+  AgeGroup,
+  AllProfileQueryOptions,
+  Gender,
+  SortField,
+  SortOrder,
+} from "./types";
+import data from "../all_countries.json";
 
 const GENDERS = ["male", "female"] as const;
 const AGE_GROUPS = ["adult", "child", "teenager", "senior"] as const;
@@ -21,16 +27,16 @@ export function isAgeGroup(value: unknown): value is AgeGroup {
 
 export function isSortField(value: unknown): value is SortField {
   return (
-    typeof value === 'string' &&
+    typeof value === "string" &&
     SORT_FIELDS.includes(value.toLowerCase() as SortField)
-  )
+  );
 }
 
 export function isSortOrder(value: unknown): value is SortOrder {
   return (
-    typeof value === 'string' && 
+    typeof value === "string" &&
     SORT_ORDER.includes(value.toLowerCase() as SortOrder)
-  )
+  );
 }
 
 export const countryMap = new Map<string, string>();
@@ -43,7 +49,9 @@ export function buildCountryMap(map: Map<string, string>): void {
   }
 }
 
-export function analyzeNaturalLanguageQuery(query: string): AllProfileQueryOptions | null {
+export function analyzeNaturalLanguageQuery(
+  query: string,
+): AllProfileQueryOptions | null {
   const tokens = query.toLowerCase().trim().split(/\s+/);
 
   const genderOptions = genderPass(tokens);
@@ -71,7 +79,16 @@ export function analyzeNaturalLanguageQuery(query: string): AllProfileQueryOptio
   return options;
 }
 
-const FEMALE_TOKENS = new Set(["female", "females", "woman", "women", "girl", "girls", "babe", "babes"]);
+const FEMALE_TOKENS = new Set([
+  "female",
+  "females",
+  "woman",
+  "women",
+  "girl",
+  "girls",
+  "babe",
+  "babes",
+]);
 const MALE_TOKENS = new Set(["male", "males", "man", "men", "boys", "boy"]);
 
 // This can only be filter, not sort
@@ -79,31 +96,43 @@ export const genderPass = (tokens: string[]): AllProfileQueryOptions => {
   const isFemale = tokens.some((t) => FEMALE_TOKENS.has(t));
   const isMale = tokens.some((t) => MALE_TOKENS.has(t));
 
-  if (isFemale && isMale) return { };
+  if (isFemale && isMale) return {};
   if (isFemale) return { gender: "female" };
   if (isMale) return { gender: "male" };
   return {};
-}
+};
 
-const TEENAGE_TOKENS = new Set(["teen", "teens", "teenage", "teenager", "teenagers"]);
+const TEENAGE_TOKENS = new Set([
+  "teen",
+  "teens",
+  "teenage",
+  "teenager",
+  "teenagers",
+]);
 const YOUNG_TOKENS = new Set(["youth", "young", "youths"]);
 const ADULT_TOKENS = new Set(["adult", "adults"]);
 const ELDERLY_TOKENS = new Set(["senior", "seniors", "elderly", "old"]);
 const CHILD_TOKENS = new Set(["child", "children", "kid", "kids"]);
 
 const MIN_AGE_ANCHORS = new Set(["above", "over", "older", "minimum", "min"]);
-const MAX_AGE_ANCHORS = new Set(["below", "under", "younger", "maximum", "max"]);
+const MAX_AGE_ANCHORS = new Set([
+  "below",
+  "under",
+  "younger",
+  "maximum",
+  "max",
+]);
 
 // This is a filter-only pass — sorting is handled separately
 export const ageGroupPass = (tokens: string[]): AllProfileQueryOptions => {
   const result: AllProfileQueryOptions = {};
 
   // Named age group tokens
-  const isYoung = tokens.some(t => YOUNG_TOKENS.has(t));
-  const isTeenager = tokens.some(t => TEENAGE_TOKENS.has(t));
-  const isAdult = tokens.some(t => ADULT_TOKENS.has(t));
-  const isElderly = tokens.some(t => ELDERLY_TOKENS.has(t));
-  const isChild = tokens.some(t => CHILD_TOKENS.has(t));
+  const isYoung = tokens.some((t) => YOUNG_TOKENS.has(t));
+  const isTeenager = tokens.some((t) => TEENAGE_TOKENS.has(t));
+  const isAdult = tokens.some((t) => ADULT_TOKENS.has(t));
+  const isElderly = tokens.some((t) => ELDERLY_TOKENS.has(t));
+  const isChild = tokens.some((t) => CHILD_TOKENS.has(t));
 
   // "young" → min_age: 16, max_age: 24 (special mapping, not a stored age_group)
   if (isYoung) {
@@ -134,7 +163,7 @@ export const ageGroupPass = (tokens: string[]): AllProfileQueryOptions => {
   }
 
   return result;
-}
+};
 
 const COUNTRY_ANCHORS = new Set(["from", "in", "of"]);
 
@@ -157,9 +186,12 @@ export const nationalityPass = (tokens: string[]): AllProfileQueryOptions => {
   }
 
   return {};
-}
+};
 
-export function parsePagination(query: Record<string, any>): { page: number; limit: number } {
+export function parsePagination(query: Record<string, any>): {
+  page: number;
+  limit: number;
+} {
   const page = Math.max(parseInt(query.page) || 1, 1);
   const limit = Math.min(Math.max(parseInt(query.limit) || 10, 1), 50);
   return { page, limit };
@@ -187,4 +219,4 @@ export const paginationPass = (tokens: string[]): AllProfileQueryOptions => {
   }
 
   return result;
-}
+};
