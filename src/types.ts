@@ -1,3 +1,11 @@
+declare global {
+  namespace Express {
+    interface Request {
+      user?: { userId: string; role: string };
+    }
+  }
+}
+
 export type NationalizeAPIResponse = {
   count: number;
   name: string;
@@ -38,7 +46,7 @@ export type Classification = {
   created_at: Date;
 };
 
-export type SortField = "age" | "created_at" | "gender_probability"
+export type SortField = "age" | "created_at" | "gender_probability";
 export type SortOrder = "asc" | "desc";
 
 export type AllProfileQueryOptions = {
@@ -56,4 +64,24 @@ export type AllProfileQueryOptions = {
   // Pagination and Limit
   page?: number;
   limit?: number;
+};
+
+export type UserRole = "admin" | "analyst";
+
+export type User = {
+  id: string;
+  github_id: string;
+  username: string;
+  email: string | null;
+  role: UserRole;
+  created_at: Date;
+};
+
+export type Session = {
+  id: string;
+  user_id: string;
+  token_hash: string;
+  expires_at: Date;
+  revoked: boolean;
+  created_at: Date;
 };

@@ -22,9 +22,13 @@ describe("genderPass", () => {
   });
 
   it("detects female tokens", () => {
-    expect(genderPass(["females", "above", "30"])).toEqual({ gender: "female" });
+    expect(genderPass(["females", "above", "30"])).toEqual({
+      gender: "female",
+    });
     expect(genderPass(["woman"])).toEqual({ gender: "female" });
-    expect(genderPass(["women", "from", "kenya"])).toEqual({ gender: "female" });
+    expect(genderPass(["women", "from", "kenya"])).toEqual({
+      gender: "female",
+    });
   });
 
   it("cancels gender when both male and female tokens present", () => {
@@ -112,24 +116,34 @@ describe("ageGroupPass", () => {
 
 describe("nationalityPass", () => {
   it("resolves single-word country after 'from'", () => {
-    expect(nationalityPass(["people", "from", "nigeria"])).toEqual({ country_id: "NG" });
-    expect(nationalityPass(["males", "from", "kenya"])).toEqual({ country_id: "KE" });
+    expect(nationalityPass(["people", "from", "nigeria"])).toEqual({
+      country_id: "NG",
+    });
+    expect(nationalityPass(["males", "from", "kenya"])).toEqual({
+      country_id: "KE",
+    });
     expect(nationalityPass(["from", "angola"])).toEqual({ country_id: "AO" });
   });
 
   it("resolves multi-word country after 'from'", () => {
-    expect(nationalityPass(["from", "south", "africa"])).toEqual({ country_id: "ZA" });
+    expect(nationalityPass(["from", "south", "africa"])).toEqual({
+      country_id: "ZA",
+    });
     // "DR Congo" does not match — the ISO name is "Congo, Democratic Republic of the"
     // which cannot be matched from natural language. See README limitations.
     expect(nationalityPass(["from", "congo"])).toEqual({ country_id: "CG" }); // Republic of the Congo
   });
 
   it("resolves country after 'in'", () => {
-    expect(nationalityPass(["women", "in", "kenya"])).toEqual({ country_id: "KE" });
+    expect(nationalityPass(["women", "in", "kenya"])).toEqual({
+      country_id: "KE",
+    });
   });
 
   it("resolves country after 'of'", () => {
-    expect(nationalityPass(["people", "of", "nigeria"])).toEqual({ country_id: "NG" });
+    expect(nationalityPass(["people", "of", "nigeria"])).toEqual({
+      country_id: "NG",
+    });
   });
 
   it("returns empty when no anchor word found", () => {
@@ -146,19 +160,19 @@ describe("nationalityPass", () => {
 describe("paginationPass", () => {
   it("parses 'page N'", () => {
     expect(paginationPass(["young", "males", "page", "2"])).toEqual(
-      expect.objectContaining({ page: 2 })
+      expect.objectContaining({ page: 2 }),
     );
   });
 
   it("parses 'show N' as limit", () => {
     expect(paginationPass(["show", "20"])).toEqual(
-      expect.objectContaining({ limit: 20 })
+      expect.objectContaining({ limit: 20 }),
     );
   });
 
   it("parses 'take N' as limit", () => {
     expect(paginationPass(["take", "5"])).toEqual(
-      expect.objectContaining({ limit: 5 })
+      expect.objectContaining({ limit: 5 }),
     );
   });
 
@@ -196,18 +210,32 @@ describe("analyzeNaturalLanguageQuery", () => {
 
   it("parses 'adult males from kenya' correctly", () => {
     const result = analyzeNaturalLanguageQuery("adult males from kenya");
-    expect(result).toMatchObject({ gender: "male", age_group: "adult", country_id: "KE" });
+    expect(result).toMatchObject({
+      gender: "male",
+      age_group: "adult",
+      country_id: "KE",
+    });
   });
 
   it("parses 'male and female teenagers above 17' correctly", () => {
-    const result = analyzeNaturalLanguageQuery("male and female teenagers above 17");
+    const result = analyzeNaturalLanguageQuery(
+      "male and female teenagers above 17",
+    );
     expect(result).toMatchObject({ age_group: "teenager", min_age: 17 });
     expect(result?.gender).toBeUndefined();
   });
 
   it("parses pagination from query string", () => {
-    const result = analyzeNaturalLanguageQuery("young males from nigeria page 2");
-    expect(result).toMatchObject({ gender: "male", min_age: 16, max_age: 24, country_id: "NG", page: 2 });
+    const result = analyzeNaturalLanguageQuery(
+      "young males from nigeria page 2",
+    );
+    expect(result).toMatchObject({
+      gender: "male",
+      min_age: 16,
+      max_age: 24,
+      country_id: "NG",
+      page: 2,
+    });
   });
 
   it("returns null for uninterpretable query", () => {
