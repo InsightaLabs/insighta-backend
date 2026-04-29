@@ -16,11 +16,9 @@ export function authorize(requiredRole: UserRole) {
       return next();
     }
 
-    return res
-      .status(403)
-      .json({
-        status: "error",
-        message: "Forbidden: insufficient permissions",
-      });
+    return res.status(403).json({
+      status: "error",
+      message: "Forbidden: insufficient permissions",
+    });
   };
 }

@@ -233,7 +233,8 @@ export class DatabaseClient {
     values.push(limit, offset);
 
     const result = await this.pool.query(query, values);
-    const total = result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
+    const total =
+      result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
 
     const data = result.rows.map(({ total_count, ...row }) => row);
     return {
@@ -282,7 +283,14 @@ export class DatabaseClient {
              avatar_url = EXCLUDED.avatar_url,
              last_login_at = EXCLUDED.last_login_at
        RETURNING id, github_id, username, email, avatar_url, last_login_at, role, created_at`,
-      [user.id, user.github_id, user.username, user.email, user.avatar_url, user.last_login_at],
+      [
+        user.id,
+        user.github_id,
+        user.username,
+        user.email,
+        user.avatar_url,
+        user.last_login_at,
+      ],
     );
     return result.rows[0];
   }

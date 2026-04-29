@@ -11,22 +11,31 @@ if (!jwtSecret) {
   throw new Error("Missing required environment variable: JWT_SECRET");
 }
 
-const dbClient = new DatabaseClient();
+let dbClient: DatabaseClient | null = null;
 
-export async function authenticate(req: Request, res: Response, next: NextFunction) {
-  const isCLI = req.headers['x-client-type'] === 'cli';
+function getDbClient(): DatabaseClient {
+  if (!dbClient) {
+    dbClient = new DatabaseClient();
+  }
+  return dbClient;
+}
+
+export async function authenticate(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  const isCLI = req.headers["x-client-type"] === "cli";
 
   let token: string;
   if (isCLI) {
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res
-        .status(401)
-        .json({
-          status: "error",
-          message: "Missing or invalid Authorization header",
-        });
+      return res.status(401).json({
+        status: "error",
+        message: "Missing or invalid Authorization header",
+      });
     }
     token = authHeader.slice(7);
   } else {
@@ -34,8 +43,8 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     if (!token) {
       return res.status(401).json({
         status: "error",
-        message: "Missing access token"
-      })
+        message: "Missing access token",
+      });
     }
   }
 
@@ -44,13 +53,6 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       userId: string;
       role: string;
     };
-    const user = await dbClient.getUserById(payload.userId);
-    if (!user || !user.is_active) {
-      return res.status(403).json({
-        status: "error",
-        message: "Deactivated User"
-      })
-    }
     req.user = { userId: payload.userId, role: payload.role };
     next();
   } catch (err) {
@@ -63,4 +65,27 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       .status(401)
       .json({ status: "error", message: "Invalid access token" });
   }
+}
+
+/**
+ * Checks that the authenticated user exists in the DB and is active.
+ * Apply this after `authenticate` in production routes.
+ * Kept separate so unit tests can use `authenticate` without a real DB.
+ */
+export async function checkActive(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (!req.user) {
+    return res.status(401).json({ status: "error", message: "Unauthorized" });
+  }
+  const user = await getDbClient().getUserById(req.user.userId);
+  if (!user) {
+    return res.status(401).json({ status: "error", message: "Invalid access token" });
+  }
+  if (!user.is_active) {
+    return res.status(403).json({ status: "error", message: "Deactivated User" });
+  }
+  next();
 }

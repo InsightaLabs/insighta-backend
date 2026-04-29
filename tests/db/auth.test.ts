@@ -20,10 +20,9 @@ beforeAll(() => {
 
 afterAll(async () => {
   // Clean up test user (cascades to sessions)
-  await (db as any).pool.query(
-    `DELETE FROM users WHERE github_id = $1`,
-    [testGithubId]
-  );
+  await (db as any).pool.query(`DELETE FROM users WHERE github_id = $1`, [
+    testGithubId,
+  ]);
 });
 
 // ─── upsertUser ────────────────────────────────────────────────────────────
@@ -71,14 +70,16 @@ describe("upsertUser", () => {
     expect(user.email).toBeNull();
 
     // cleanup
-    await (db as any).pool.query(`DELETE FROM users WHERE github_id = $1`, [githubId]);
+    await (db as any).pool.query(`DELETE FROM users WHERE github_id = $1`, [
+      githubId,
+    ]);
   });
 
   it("preserves the role field (does not reset to default on update)", async () => {
     // Manually set role to admin
     await (db as any).pool.query(
       `UPDATE users SET role = 'admin' WHERE github_id = $1`,
-      [testGithubId]
+      [testGithubId],
     );
 
     const updated = await db.upsertUser({
@@ -93,7 +94,7 @@ describe("upsertUser", () => {
     // reset back to analyst
     await (db as any).pool.query(
       `UPDATE users SET role = 'analyst' WHERE github_id = $1`,
-      [testGithubId]
+      [testGithubId],
     );
   });
 });
@@ -119,7 +120,10 @@ describe("getUserById", () => {
 describe("createSession", () => {
   it("creates a session and returns it", async () => {
     const rawToken = crypto.randomBytes(32).toString("hex");
-    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(rawToken)
+      .digest("hex");
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     const sessionId = uuid.v7();
 
@@ -139,7 +143,10 @@ describe("createSession", () => {
 
   it("throws on duplicate token_hash", async () => {
     const rawToken = crypto.randomBytes(32).toString("hex");
-    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(rawToken)
+      .digest("hex");
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     await db.createSession({
@@ -155,7 +162,7 @@ describe("createSession", () => {
         user_id: testUserId,
         token_hash: tokenHash,
         expires_at: expiresAt,
-      })
+      }),
     ).rejects.toThrow();
   });
 });
@@ -165,7 +172,10 @@ describe("createSession", () => {
 describe("getSessionByTokenHash", () => {
   it("returns the session by token hash", async () => {
     const rawToken = crypto.randomBytes(32).toString("hex");
-    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(rawToken)
+      .digest("hex");
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     await db.createSession({
@@ -194,7 +204,10 @@ describe("getSessionByTokenHash", () => {
 describe("revokeSession", () => {
   it("marks the session as revoked", async () => {
     const rawToken = crypto.randomBytes(32).toString("hex");
-    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(rawToken)
+      .digest("hex");
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     await db.createSession({
@@ -212,7 +225,10 @@ describe("revokeSession", () => {
 
   it("is idempotent — revoking an already-revoked session does not throw", async () => {
     const rawToken = crypto.randomBytes(32).toString("hex");
-    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(rawToken)
+      .digest("hex");
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     await db.createSession({
@@ -236,8 +252,18 @@ describe("revokeSession", () => {
     const hash2 = crypto.createHash("sha256").update(rawToken2).digest("hex");
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    await db.createSession({ id: uuid.v7(), user_id: testUserId, token_hash: hash1, expires_at: expiresAt });
-    await db.createSession({ id: uuid.v7(), user_id: testUserId, token_hash: hash2, expires_at: expiresAt });
+    await db.createSession({
+      id: uuid.v7(),
+      user_id: testUserId,
+      token_hash: hash1,
+      expires_at: expiresAt,
+    });
+    await db.createSession({
+      id: uuid.v7(),
+      user_id: testUserId,
+      token_hash: hash2,
+      expires_at: expiresAt,
+    });
 
     await db.revokeSession(hash1);
 

@@ -69,6 +69,7 @@ Two clients are supported: a **CLI** and a **web portal**. Both use GitHub OAuth
 ### GitHub OAuth with PKCE
 
 **Web portal flow:**
+
 1. Portal redirects browser to `GET /auth/github`
 2. Backend generates `state`, `code_verifier`, `code_challenge`, stores them in memory (10 min TTL), and redirects to GitHub
 3. GitHub redirects to `GET /auth/github/callback?code=...&state=...`
@@ -76,6 +77,7 @@ Two clients are supported: a **CLI** and a **web portal**. Both use GitHub OAuth
 5. Sets three cookies and redirects to `WEB_PORTAL_URL/dashboard`
 
 **CLI flow:**
+
 1. CLI generates its own PKCE params and opens the browser directly to GitHub OAuth with `redirect_uri=http://localhost:<port>/callback`
 2. GitHub redirects to the CLI's local callback server
 3. CLI sends `GET /auth/github/callback?code=...&code_verifier=...` with `x-client-type: cli`
@@ -83,18 +85,20 @@ Two clients are supported: a **CLI** and a **web portal**. Both use GitHub OAuth
 
 ### Token issuance
 
-| Token | Type | Expiry | Storage (web) | Storage (CLI) |
-|---|---|---|---|---|
-| Access token | JWT (HS256) | 3 minutes | `access_token` httpOnly cookie | In memory / credentials file |
-| Refresh token | Opaque (32 bytes hex) | 5 minutes | `refresh_token` httpOnly cookie | Credentials file |
+| Token         | Type                  | Expiry    | Storage (web)                   | Storage (CLI)                |
+| ------------- | --------------------- | --------- | ------------------------------- | ---------------------------- |
+| Access token  | JWT (HS256)           | 3 minutes | `access_token` httpOnly cookie  | In memory / credentials file |
+| Refresh token | Opaque (32 bytes hex) | 5 minutes | `refresh_token` httpOnly cookie | Credentials file             |
 
 **Browser response** (no `x-client-type: cli`):
+
 - Sets `access_token` — httpOnly, SameSite=Strict
 - Sets `refresh_token` — httpOnly, SameSite=Strict
 - Sets `csrf_token` — readable (non-httpOnly), for CSRF double-submit
 - Redirects to `WEB_PORTAL_URL/dashboard`
 
 **CLI response** (`x-client-type: cli`):
+
 ```json
 {
   "status": "success",
@@ -125,10 +129,10 @@ Marks the session as `revoked = true`. Idempotent — returns 200 even if alread
 
 ## Role-Based Access Control
 
-| Role | Permissions |
-|---|---|
-| `analyst` | Read profiles, search, export CSV |
-| `admin` | Everything analyst can do + create profiles, delete profiles |
+| Role      | Permissions                                                  |
+| --------- | ------------------------------------------------------------ |
+| `analyst` | Read profiles, search, export CSV                            |
+| `admin`   | Everything analyst can do + create profiles, delete profiles |
 
 New users are assigned `analyst` by default. Role is stored in the `users` table and embedded in the JWT payload.
 
@@ -150,10 +154,10 @@ Applied to all mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`) on `/api/pro
 
 ## Rate Limiting
 
-| Limiter | Applied to | Limit |
-|---|---|---|
-| `authLimiter` | `/auth/*` | 10 requests / minute |
-| `appLimiter` | `/api/profiles/*` | 60 requests / minute per user |
+| Limiter       | Applied to        | Limit                         |
+| ------------- | ----------------- | ----------------------------- |
+| `authLimiter` | `/auth/*`         | 10 requests / minute          |
+| `appLimiter`  | `/api/profiles/*` | 60 requests / minute per user |
 
 Returns `429 Too Many Requests` when exceeded. Limits are relaxed to 1000/min in `development` mode.
 
@@ -178,26 +182,33 @@ Format: `METHOD ENDPOINT STATUS_CODE RESPONSE_TIMEms`
 ### Auth
 
 #### `GET /auth/github`
+
 Initiates GitHub OAuth. Generates PKCE params, stores state, redirects to GitHub.
 
 #### `GET /auth/github/callback`
+
 GitHub redirects here after authorization. Validates state, exchanges code, upserts user, issues tokens.
 
 Supports both web portal (sets cookies, redirects) and CLI (`x-client-type: cli`, returns JSON).
 
 #### `POST /auth/refresh`
+
 ```json
 { "refresh_token": "string" }
 ```
+
 Returns new `access_token` and `refresh_token`. Old refresh token is immediately revoked.
 
 #### `POST /auth/logout`
+
 ```json
 { "refresh_token": "string" }
 ```
+
 Revokes the session. Returns 200 regardless of prior state.
 
 #### `GET /auth/me`
+
 Requires authentication (cookie or Bearer token). Returns the authenticated user's profile.
 
 ```json
@@ -219,6 +230,7 @@ Requires authentication (cookie or Bearer token). Returns the authenticated user
 ### Profiles (all require authentication + `X-API-Version: 1` header)
 
 #### `POST /api/profiles` — admin only
+
 Classifies a name via Genderize, Agify, and Nationalize. Returns 201 on creation, 200 if the name already exists.
 
 ```json
@@ -226,6 +238,7 @@ Classifies a name via Genderize, Agify, and Nationalize. Returns 201 on creation
 ```
 
 Response:
+
 ```json
 {
   "status": "success",
@@ -245,25 +258,27 @@ Response:
 ```
 
 #### `GET /api/profiles` — analyst+
+
 Returns paginated profiles.
 
 **Query parameters:**
 
-| Parameter | Type | Description |
-|---|---|---|
-| `gender` | `male` \| `female` | Filter by gender |
-| `age_group` | `child` \| `teenager` \| `adult` \| `senior` | Filter by age group |
-| `country_id` | string | ISO 3166-1 alpha-2 (e.g. `NG`) |
-| `min_age` | number | Minimum age inclusive |
-| `max_age` | number | Maximum age inclusive |
-| `min_gender_probability` | float | Minimum gender confidence (0–1) |
-| `min_country_probability` | float | Minimum nationality confidence (0–1) |
-| `sort_by` | `age` \| `created_at` \| `gender_probability` | Sort field |
-| `order` | `asc` \| `desc` | Sort direction |
-| `page` | number | Page number (default: 1) |
-| `limit` | number | Results per page (default: 10, max: 50) |
+| Parameter                 | Type                                          | Description                             |
+| ------------------------- | --------------------------------------------- | --------------------------------------- |
+| `gender`                  | `male` \| `female`                            | Filter by gender                        |
+| `age_group`               | `child` \| `teenager` \| `adult` \| `senior`  | Filter by age group                     |
+| `country_id`              | string                                        | ISO 3166-1 alpha-2 (e.g. `NG`)          |
+| `min_age`                 | number                                        | Minimum age inclusive                   |
+| `max_age`                 | number                                        | Maximum age inclusive                   |
+| `min_gender_probability`  | float                                         | Minimum gender confidence (0–1)         |
+| `min_country_probability` | float                                         | Minimum nationality confidence (0–1)    |
+| `sort_by`                 | `age` \| `created_at` \| `gender_probability` | Sort field                              |
+| `order`                   | `asc` \| `desc`                               | Sort direction                          |
+| `page`                    | number                                        | Page number (default: 1)                |
+| `limit`                   | number                                        | Results per page (default: 10, max: 50) |
 
 **Response:**
+
 ```json
 {
   "status": "success",
@@ -281,6 +296,7 @@ Returns paginated profiles.
 ```
 
 #### `GET /api/profiles/search` — analyst+
+
 Natural language search. See [Natural Language Parsing](#natural-language-parsing) below.
 
 ```
@@ -288,6 +304,7 @@ GET /api/profiles/search?q=young+males+from+nigeria
 ```
 
 #### `GET /api/profiles/export?format=csv` — analyst+
+
 Streams a CSV file of all matching profiles (up to 1000 records). Accepts the same filter and sort parameters as `GET /api/profiles`.
 
 ```
@@ -298,9 +315,11 @@ Content-Disposition: attachment; filename="profiles_<timestamp>.csv"
 CSV columns: `id, name, gender, gender_probability, age, age_group, country_id, country_name, country_probability, created_at`
 
 #### `GET /api/profiles/:id` — analyst+
+
 Returns a single profile by UUID.
 
 #### `DELETE /api/profiles/:id` — admin only
+
 Deletes a profile. Returns `204 No Content`.
 
 ---
@@ -310,25 +329,29 @@ Deletes a profile. Returns `204 No Content`.
 The `/api/profiles/search` endpoint uses a rule-based parser — no AI or LLMs. The query is lowercased, tokenized by whitespace, and run through four independent passes.
 
 ### Gender pass
+
 Checks tokens against fixed male/female word sets. If both are present, no gender filter is applied.
 
 ### Age group pass
+
 Maps named tokens (`young`, `adult`, `teenager`, `senior`, `child`) to age filters. Numeric anchors (`above N`, `over N`, `below N`, `under N`) extract `min_age` / `max_age`.
 
 ### Nationality pass
+
 Looks for anchor words (`from`, `in`, `of`) then matches following tokens against a reverse ISO 3166-1 country name map, longest match first.
 
 ### Pagination pass
+
 Looks for `page N`, `show N`, `take N`, `limit N` patterns.
 
 **Examples:**
 
-| Query | Parsed filters |
-|---|---|
-| `young males` | `gender: male, min_age: 16, max_age: 24` |
-| `females above 30` | `gender: female, min_age: 30` |
-| `adult males from kenya` | `gender: male, age_group: adult, country_id: KE` |
-| `seniors from the united states` | `age_group: senior, country_id: US` |
+| Query                            | Parsed filters                                   |
+| -------------------------------- | ------------------------------------------------ |
+| `young males`                    | `gender: male, min_age: 16, max_age: 24`         |
+| `females above 30`               | `gender: female, min_age: 30`                    |
+| `adult males from kenya`         | `gender: male, age_group: adult, country_id: KE` |
+| `seniors from the united states` | `age_group: senior, country_id: US`              |
 
 Returns `422 Unable to interpret query` if no recognisable filter is extracted.
 
@@ -338,43 +361,43 @@ Returns `422 Unable to interpret query` if no recognisable filter is extracted.
 
 ### `classifications`
 
-| Column | Type | Notes |
-|---|---|---|
-| `id` | UUID | Primary key, UUID v7 |
-| `name` | VARCHAR | Unique (case-insensitive conflict) |
-| `gender` | VARCHAR | `male` or `female` |
-| `gender_probability` | FLOAT | 0–1 |
-| `age` | INT | From Agify |
-| `age_group` | VARCHAR | `child`, `teenager`, `adult`, `senior` |
-| `country_id` | VARCHAR | ISO alpha-2 |
-| `country_name` | VARCHAR | Full country name |
-| `country_probability` | FLOAT | 0–1 |
-| `created_at` | TIMESTAMP | Auto |
+| Column                | Type      | Notes                                  |
+| --------------------- | --------- | -------------------------------------- |
+| `id`                  | UUID      | Primary key, UUID v7                   |
+| `name`                | VARCHAR   | Unique (case-insensitive conflict)     |
+| `gender`              | VARCHAR   | `male` or `female`                     |
+| `gender_probability`  | FLOAT     | 0–1                                    |
+| `age`                 | INT       | From Agify                             |
+| `age_group`           | VARCHAR   | `child`, `teenager`, `adult`, `senior` |
+| `country_id`          | VARCHAR   | ISO alpha-2                            |
+| `country_name`        | VARCHAR   | Full country name                      |
+| `country_probability` | FLOAT     | 0–1                                    |
+| `created_at`          | TIMESTAMP | Auto                                   |
 
 ### `users`
 
-| Column | Type | Notes |
-|---|---|---|
-| `id` | UUID | Primary key, UUID v7 |
-| `github_id` | VARCHAR | Unique |
-| `username` | VARCHAR | GitHub login |
-| `email` | VARCHAR | Nullable |
-| `avatar_url` | VARCHAR | GitHub avatar URL |
-| `role` | VARCHAR | `analyst` (default) or `admin` |
-| `is_active` | BOOLEAN | If false → 403 on all requests |
-| `last_login_at` | TIMESTAMP | Updated on each login |
-| `created_at` | TIMESTAMP | Auto |
+| Column          | Type      | Notes                          |
+| --------------- | --------- | ------------------------------ |
+| `id`            | UUID      | Primary key, UUID v7           |
+| `github_id`     | VARCHAR   | Unique                         |
+| `username`      | VARCHAR   | GitHub login                   |
+| `email`         | VARCHAR   | Nullable                       |
+| `avatar_url`    | VARCHAR   | GitHub avatar URL              |
+| `role`          | VARCHAR   | `analyst` (default) or `admin` |
+| `is_active`     | BOOLEAN   | If false → 403 on all requests |
+| `last_login_at` | TIMESTAMP | Updated on each login          |
+| `created_at`    | TIMESTAMP | Auto                           |
 
 ### `sessions`
 
-| Column | Type | Notes |
-|---|---|---|
-| `id` | UUID | Primary key, UUID v7 |
-| `user_id` | UUID | FK → users(id) |
-| `token_hash` | VARCHAR | SHA-256 hash of the raw refresh token |
-| `expires_at` | TIMESTAMP | 5 minutes from creation |
-| `revoked` | BOOLEAN | Default false |
-| `created_at` | TIMESTAMP | Auto |
+| Column       | Type      | Notes                                 |
+| ------------ | --------- | ------------------------------------- |
+| `id`         | UUID      | Primary key, UUID v7                  |
+| `user_id`    | UUID      | FK → users(id)                        |
+| `token_hash` | VARCHAR   | SHA-256 hash of the raw refresh token |
+| `expires_at` | TIMESTAMP | 5 minutes from creation               |
+| `revoked`    | BOOLEAN   | Default false                         |
+| `created_at` | TIMESTAMP | Auto                                  |
 
 ---
 
@@ -432,13 +455,13 @@ All errors follow this shape:
 { "status": "error", "message": "<description>" }
 ```
 
-| Status | Meaning |
-|---|---|
-| 400 | Missing or empty parameter / missing API version header |
-| 401 | Missing, expired, or invalid access token |
-| 403 | Insufficient role / invalid CSRF token / deactivated user |
-| 404 | Resource not found |
-| 422 | Invalid parameter value or uninterpretable NLQ |
-| 429 | Rate limit exceeded |
-| 500 | Internal server error |
-| 502 | External API (Genderize / Agify / Nationalize) returned an invalid response |
+| Status | Meaning                                                                     |
+| ------ | --------------------------------------------------------------------------- |
+| 400    | Missing or empty parameter / missing API version header                     |
+| 401    | Missing, expired, or invalid access token                                   |
+| 403    | Insufficient role / invalid CSRF token / deactivated user                   |
+| 404    | Resource not found                                                          |
+| 422    | Invalid parameter value or uninterpretable NLQ                              |
+| 429    | Rate limit exceeded                                                         |
+| 500    | Internal server error                                                       |
+| 502    | External API (Genderize / Agify / Nationalize) returned an invalid response |

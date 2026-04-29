@@ -1,4 +1,4 @@
-import { type Request, type Response, type NextFunction } from 'express';
+import { type Request, type Response, type NextFunction } from "express";
 
 /**
  * Request logger middleware.
@@ -8,12 +8,18 @@ import { type Request, type Response, type NextFunction } from 'express';
  *   GET /api/profiles 200 45ms
  *   POST /auth/refresh 401 12ms
  */
-export function requestLogger(req: Request, res: Response, next: NextFunction): void {
+export function requestLogger(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
   const start = Date.now();
 
-  res.on('finish', () => {
+  res.on("finish", () => {
     const duration = Date.now() - start;
-    console.log(`${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`);
+    console.log(
+      `${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`,
+    );
   });
 
   next();

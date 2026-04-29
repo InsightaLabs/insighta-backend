@@ -11,7 +11,10 @@ async function seed() {
   console.log(process.env.CLASSIFY_DB_URL);
   const pool = new Pool({
     connectionString: process.env.CLASSIFY_DB_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl:
+      process.env.NODE_ENV === "production"
+        ? { rejectUnauthorized: false }
+        : false,
   });
 
   console.log(`Seeding ${profiles.length} profiles...`);
