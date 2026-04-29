@@ -212,28 +212,18 @@ export async function githubCallback(req: Request, res: Response) {
     const isBrowser = req.headers['x-client-type'] !== 'cli';
 
     if (isBrowser) {
-      res.cookie('refresh_token', rawRefreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production', 
-        sameSite: 'lax',
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      })
-
       const csrfToken = crypto.randomBytes(32).toString('hex');
-      res.cookie('csrf_token', csrfToken, {
-        httpOnly: false,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-      });
 
-      res.cookie('access_token', accessToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: accessExpiryMs,
-      });
+      // Redirect to the portal's callback route handler which sets the cookies
+      // on the portal's own domain. This is required when the backend and portal
+      // are on different domains (e.g. Railway + Vercel) — cookies set by the
+      // backend would be scoped to the backend domain and never sent to the portal.
+      const callbackUrl = new URL(`${process.env.WEB_PORTAL_URL}/api/auth/callback`);
+      callbackUrl.searchParams.set('access_token', accessToken);
+      callbackUrl.searchParams.set('refresh_token', rawRefreshToken);
+      callbackUrl.searchParams.set('csrf_token', csrfToken);
 
-      return res.redirect(`${process.env.WEB_PORTAL_URL}/dashboard`);
+      return res.redirect(callbackUrl.toString());
     }
 
     return res.status(200).json({
