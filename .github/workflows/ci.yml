@@ -46,6 +46,12 @@ jobs:
           psql postgresql://classification_user:classification_password@localhost:5432/classification_db \
             -f migrations/003_create_users_and_sessions.sql
 
+      - name: Seed database
+        run: pnpm seed
+        env:
+          CLASSIFY_DB_URL: postgresql://classification_user:classification_password@localhost:5432/classification_db
+          NODE_ENV: test
+
       - name: Lint
         run: pnpm format --check
 
