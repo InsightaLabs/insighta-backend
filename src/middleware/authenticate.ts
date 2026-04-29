@@ -46,13 +46,6 @@ export async function authenticate(
       userId: string;
       role: string;
     };
-    const user = await dbClient.getUserById(payload.userId);
-    if (!user || !user.is_active) {
-      return res.status(403).json({
-        status: "error",
-        message: "Deactivated User",
-      });
-    }
     req.user = { userId: payload.userId, role: payload.role };
     next();
   } catch (err) {
@@ -65,4 +58,27 @@ export async function authenticate(
       .status(401)
       .json({ status: "error", message: "Invalid access token" });
   }
+}
+
+/**
+ * Checks that the authenticated user exists in the DB and is active.
+ * Apply this after `authenticate` in production routes.
+ * Kept separate so unit tests can use `authenticate` without a real DB.
+ */
+export async function checkActive(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (!req.user) {
+    return res.status(401).json({ status: "error", message: "Unauthorized" });
+  }
+  const user = await dbClient.getUserById(req.user.userId);
+  if (!user) {
+    return res.status(401).json({ status: "error", message: "Invalid access token" });
+  }
+  if (!user.is_active) {
+    return res.status(403).json({ status: "error", message: "Deactivated User" });
+  }
+  next();
 }

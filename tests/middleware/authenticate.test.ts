@@ -6,9 +6,26 @@ import type { Request, Response, NextFunction } from "express";
 const JWT_SECRET =
   process.env.JWT_SECRET ?? "insighta_jwt_secret_change_in_production";
 
+// Mock the DatabaseClient so tests don't hit the real DB
+vi.mock("../../src/db", () => {
+  const mockGetUserById = vi.fn().mockResolvedValue({
+    id: "user-123",
+    is_active: true,
+    role: "analyst",
+  });
+  return {
+    DatabaseClient: vi.fn().mockImplementation(() => ({
+      getUserById: mockGetUserById,
+    })),
+  };
+});
+
 function makeReq(authHeader?: string): Partial<Request> {
   return {
-    headers: authHeader ? { authorization: authHeader } : {},
+    headers: authHeader
+      ? { authorization: authHeader, 'x-client-type': 'cli' }
+      : {},
+    cookies: {},
   } as Partial<Request>;
 }
 

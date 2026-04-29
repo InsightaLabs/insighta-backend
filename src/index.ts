@@ -5,7 +5,7 @@ import cookieParser from "cookie-parser";
 import { buildCountryMap, countryMap } from "./utils";
 import v1ProfileRoutes from "./routes/v1/profiles.route";
 import authRoutes from "./routes/v1/auth.route";
-import { authenticate } from "./middleware/authenticate";
+import { authenticate, checkActive } from "./middleware/authenticate";
 import { appLimiter, authLimiter } from "./middleware/rate-limiting";
 import { config } from "dotenv";
 import { csrfProtection } from "./middleware/csrf";
@@ -45,6 +45,7 @@ app.use(
   "/api/profiles",
   appLimiter,
   authenticate,
+  checkActive,
   csrfProtection,
   versionCheck,
   v1ProfileRoutes,

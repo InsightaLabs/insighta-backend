@@ -70,6 +70,7 @@ describe("GET /api/v1/profiles — auth & role enforcement", () => {
   it("returns 401 with an expired token", async () => {
     const res = await request(app)
       .get("/api/v1/profiles")
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${expiredToken()}`);
     expect(res.status).toBe(401);
     expect(res.body.message).toContain("expired");
@@ -78,6 +79,7 @@ describe("GET /api/v1/profiles — auth & role enforcement", () => {
   it("returns 401 with an invalid token", async () => {
     const res = await request(app)
       .get("/api/v1/profiles")
+      .set("x-client-type", "cli")
       .set("Authorization", "Bearer notvalid");
     expect(res.status).toBe(401);
   });
@@ -85,6 +87,7 @@ describe("GET /api/v1/profiles — auth & role enforcement", () => {
   it("allows analyst to access GET /", async () => {
     const res = await request(app)
       .get("/api/v1/profiles")
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(200);
   });
@@ -92,48 +95,49 @@ describe("GET /api/v1/profiles — auth & role enforcement", () => {
   it("allows admin to access GET / (superset)", async () => {
     const res = await request(app)
       .get("/api/v1/profiles")
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${adminToken()}`);
     expect(res.status).toBe(200);
   });
 });
 
-describe("GET /api/v1/profiles — response shape (v1 meta format)", () => {
-  it("returns data and meta object (not flat page/limit/total)", async () => {
+describe("GET /api/v1/profiles — response shape (flat format)", () => {
+  it("returns data with flat page/limit/total/total_pages fields", async () => {
     const res = await request(app)
       .get("/api/v1/profiles")
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("success");
     expect(res.body.data).toBeInstanceOf(Array);
-    expect(res.body.meta).toBeDefined();
-    expect(res.body.meta.page).toBeDefined();
-    expect(res.body.meta.limit).toBeDefined();
-    expect(res.body.meta.total).toBeDefined();
-    expect(res.body.meta.totalPages).toBeDefined();
-    // Ensure old flat shape is NOT present
-    expect(res.body.page).toBeUndefined();
-    expect(res.body.limit).toBeUndefined();
-    expect(res.body.total).toBeUndefined();
+    expect(res.body.page).toBeDefined();
+    expect(res.body.limit).toBeDefined();
+    expect(res.body.total).toBeDefined();
+    expect(res.body.total_pages).toBeDefined();
+    // Ensure nested meta shape is NOT present
+    expect(res.body.meta).toBeUndefined();
   });
 
   it("totalPages is calculated correctly", async () => {
     const res = await request(app)
       .get("/api/v1/profiles")
       .query({ limit: 10 })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
 
-    const { total, limit, totalPages } = res.body.meta;
-    expect(totalPages).toBe(Math.ceil(total / limit));
+    const { total, limit, total_pages } = res.body;
+    expect(total_pages).toBe(Math.ceil(total / limit));
   });
 
   it("default pagination is page 1, limit 10", async () => {
     const res = await request(app)
       .get("/api/v1/profiles")
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
 
-    expect(res.body.meta.page).toBe(1);
-    expect(res.body.meta.limit).toBe(10);
+    expect(res.body.page).toBe(1);
+    expect(res.body.limit).toBe(10);
     expect(res.body.data).toHaveLength(10);
   });
 });
@@ -143,6 +147,7 @@ describe("GET /api/v1/profiles — filters", () => {
     const res = await request(app)
       .get("/api/v1/profiles")
       .query({ gender: "unknown" })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(422);
   });
@@ -151,6 +156,7 @@ describe("GET /api/v1/profiles — filters", () => {
     const res = await request(app)
       .get("/api/v1/profiles")
       .query({ age_group: "baby" })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(422);
   });
@@ -159,6 +165,7 @@ describe("GET /api/v1/profiles — filters", () => {
     const res = await request(app)
       .get("/api/v1/profiles")
       .query({ sort_by: "name" })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(422);
   });
@@ -167,6 +174,7 @@ describe("GET /api/v1/profiles — filters", () => {
     const res = await request(app)
       .get("/api/v1/profiles")
       .query({ gender: "male", limit: 20 })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(200);
     expect(res.body.data.every((r: any) => r.gender === "male")).toBe(true);
@@ -176,6 +184,7 @@ describe("GET /api/v1/profiles — filters", () => {
     const res = await request(app)
       .get("/api/v1/profiles")
       .query({ age_group: "adult", limit: 20 })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(200);
     expect(res.body.data.every((r: any) => r.age_group === "adult")).toBe(true);
@@ -195,6 +204,7 @@ describe("GET /api/v1/profiles/search", () => {
   it("returns 400 when q is missing", async () => {
     const res = await request(app)
       .get("/api/v1/profiles/search")
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(400);
   });
@@ -203,25 +213,28 @@ describe("GET /api/v1/profiles/search", () => {
     const res = await request(app)
       .get("/api/v1/profiles/search")
       .query({ q: "hello world" })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(422);
   });
 
-  it("returns results with meta shape for valid query", async () => {
+  it("returns results for valid query", async () => {
     const res = await request(app)
       .get("/api/v1/profiles/search")
       .query({ q: "young males" })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(200);
     expect(res.body.data).toBeInstanceOf(Array);
-    expect(res.body.meta).toBeDefined();
-    expect(res.body.meta.totalPages).toBeDefined();
+    expect(res.body.total).toBeDefined();
+    expect(res.body.total_pages).toBeDefined();
   });
 
   it("analyst can access search", async () => {
     const res = await request(app)
       .get("/api/v1/profiles/search")
       .query({ q: "females above 30" })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(200);
   });
@@ -231,13 +244,17 @@ describe("GET /api/v1/profiles/search", () => {
 
 describe("GET /api/v1/profiles/export", () => {
   it("returns 401 with no token", async () => {
-    const res = await request(app).get("/api/v1/profiles/export");
+    const res = await request(app)
+      .get("/api/v1/profiles/export")
+      .query({ format: "csv" });
     expect(res.status).toBe(401);
   });
 
   it("returns CSV content-type", async () => {
     const res = await request(app)
       .get("/api/v1/profiles/export")
+      .query({ format: "csv" })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("text/csv");
@@ -246,14 +263,18 @@ describe("GET /api/v1/profiles/export", () => {
   it("returns content-disposition attachment header", async () => {
     const res = await request(app)
       .get("/api/v1/profiles/export")
+      .query({ format: "csv" })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.headers["content-disposition"]).toContain("attachment");
-    expect(res.headers["content-disposition"]).toContain("profiles.csv");
+    expect(res.headers["content-disposition"]).toContain("profiles");
   });
 
   it("CSV has header row with expected columns", async () => {
     const res = await request(app)
       .get("/api/v1/profiles/export")
+      .query({ format: "csv" })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     const firstLine = res.text.split("\n")[0];
     expect(firstLine).toContain("id");
@@ -266,15 +287,18 @@ describe("GET /api/v1/profiles/export", () => {
   it("CSV body has data rows", async () => {
     const res = await request(app)
       .get("/api/v1/profiles/export")
+      .query({ format: "csv" })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     const lines = res.text.trim().split("\n");
-    expect(lines.length).toBeGreaterThan(1); // header + at least one data row
+    expect(lines.length).toBeGreaterThan(1);
   });
 
   it("returns 422 for invalid gender filter", async () => {
     const res = await request(app)
       .get("/api/v1/profiles/export")
-      .query({ gender: "unknown" })
+      .query({ format: "csv", gender: "unknown" })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(422);
   });
@@ -282,11 +306,11 @@ describe("GET /api/v1/profiles/export", () => {
   it("filters CSV by gender=female", async () => {
     const res = await request(app)
       .get("/api/v1/profiles/export")
-      .query({ gender: "female" })
+      .query({ format: "csv", gender: "female" })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(200);
     const lines = res.text.trim().split("\n");
-    // Skip header, check all data rows contain "female"
     const dataRows = lines.slice(1).filter(Boolean);
     expect(dataRows.every((row) => row.includes("female"))).toBe(true);
   });
@@ -294,6 +318,8 @@ describe("GET /api/v1/profiles/export", () => {
   it("analyst can export (analyst role is sufficient)", async () => {
     const res = await request(app)
       .get("/api/v1/profiles/export")
+      .query({ format: "csv" })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(200);
   });
@@ -301,6 +327,8 @@ describe("GET /api/v1/profiles/export", () => {
   it("admin can also export", async () => {
     const res = await request(app)
       .get("/api/v1/profiles/export")
+      .query({ format: "csv" })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${adminToken()}`);
     expect(res.status).toBe(200);
   });
@@ -317,19 +345,21 @@ describe("GET /api/v1/profiles/:id", () => {
   it("returns 404 for a non-existent id", async () => {
     const res = await request(app)
       .get(`/api/v1/profiles/${uuid.v7()}`)
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(404);
   });
 
   it("analyst can access GET /:id", async () => {
-    // Get a real id from the DB first
     const listRes = await request(app)
       .get("/api/v1/profiles")
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     const id = listRes.body.data[0].id;
 
     const res = await request(app)
       .get(`/api/v1/profiles/${id}`)
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(200);
     expect(res.body.data.id).toBe(id);
@@ -347,6 +377,7 @@ describe("DELETE /api/v1/profiles/:id — role enforcement", () => {
   it("returns 403 when analyst tries to delete", async () => {
     const res = await request(app)
       .delete(`/api/v1/profiles/${uuid.v7()}`)
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(403);
   });
@@ -354,6 +385,7 @@ describe("DELETE /api/v1/profiles/:id — role enforcement", () => {
   it("returns 404 when admin deletes non-existent id", async () => {
     const res = await request(app)
       .delete(`/api/v1/profiles/${uuid.v7()}`)
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${adminToken()}`);
     expect(res.status).toBe(404);
   });
@@ -372,6 +404,7 @@ describe("POST /api/v1/profiles — role enforcement", () => {
   it("returns 403 when analyst tries to create a profile", async () => {
     const res = await request(app)
       .post("/api/v1/profiles")
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`)
       .send({ name: "Alice" });
     expect(res.status).toBe(403);
@@ -384,11 +417,13 @@ describe("GET /api/v1/profiles/:id — success", () => {
   it("returns 200 with correct profile shape", async () => {
     const listRes = await request(app)
       .get("/api/v1/profiles")
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     const record = listRes.body.data[0];
 
     const res = await request(app)
       .get(`/api/v1/profiles/${record.id}`)
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
 
     expect(res.status).toBe(200);
@@ -405,8 +440,6 @@ describe("GET /api/v1/profiles/:id — success", () => {
 
 describe("DELETE /api/v1/profiles/:id — success", () => {
   it("admin can delete an existing profile and gets 204", async () => {
-    // First create a profile to delete — call the external APIs via createProfile
-    // Instead, insert directly into DB to avoid external API calls in tests
     const db2 = new DatabaseClient();
     const testId = uuid.v7();
     await (db2 as any).pool.query(
@@ -427,25 +460,27 @@ describe("DELETE /api/v1/profiles/:id — success", () => {
 
     const res = await request(app)
       .delete(`/api/v1/profiles/${testId}`)
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${adminToken()}`);
 
     expect(res.status).toBe(204);
     expect(res.body).toEqual({});
 
-    // Confirm it's gone
     const checkRes = await request(app)
       .get(`/api/v1/profiles/${testId}`)
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(checkRes.status).toBe(404);
   });
 });
 
-// ─── POST /api/v1/profiles — duplicate returns 200 ────────────────────────
+// ─── POST /api/v1/profiles — validation ───────────────────────────────────
 
 describe("POST /api/v1/profiles — duplicate profile", () => {
   it("returns 400 when name is missing from body", async () => {
     const res = await request(app)
       .post("/api/v1/profiles")
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${adminToken()}`)
       .send({});
     expect(res.status).toBe(400);
@@ -455,6 +490,7 @@ describe("POST /api/v1/profiles — duplicate profile", () => {
   it("returns 422 when name is not a string", async () => {
     const res = await request(app)
       .post("/api/v1/profiles")
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${adminToken()}`)
       .send({ name: 123 });
     expect(res.status).toBe(422);
@@ -468,8 +504,8 @@ describe("GET /api/v1/profiles — pagination edge cases", () => {
     const res = await request(app)
       .get("/api/v1/profiles")
       .query({ page: 0 })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
-    // page=0 produces offset=-10 in the DB query, which causes a DB error
     expect(res.status).toBe(500);
   });
 
@@ -477,50 +513,51 @@ describe("GET /api/v1/profiles — pagination edge cases", () => {
     const res = await request(app)
       .get("/api/v1/profiles")
       .query({ page: -1 })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(500);
   });
 
-  it("limit exceeding 50 is capped at 50 in meta", async () => {
+  it("limit exceeding 50 is capped at 50", async () => {
     const res = await request(app)
       .get("/api/v1/profiles")
       .query({ limit: 200 })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
     expect(res.status).toBe(200);
-    expect(res.body.meta.limit).toBeLessThanOrEqual(50);
+    expect(res.body.limit).toBeLessThanOrEqual(50);
     expect(res.body.data.length).toBeLessThanOrEqual(50);
   });
 
   it("totalPages is 1 when total equals limit exactly", async () => {
-    // Get total count first
     const countRes = await request(app)
       .get("/api/v1/profiles")
       .query({ limit: 1 })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
-    const total = countRes.body.meta.total;
+    const total = countRes.body.total;
 
-    // Use limit = total to get exactly 1 page (capped at 50)
     const limit = Math.min(total, 50);
     const res = await request(app)
       .get("/api/v1/profiles")
       .query({ limit })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.meta.totalPages).toBe(Math.ceil(total / limit));
+    expect(res.body.total_pages).toBe(Math.ceil(total / limit));
   });
 
-  it("totalPages rounds up — 11 records with limit 10 = 2 pages", async () => {
-    // We can't control total, but we can verify the math is ceil not floor
+  it("totalPages rounds up", async () => {
     const res = await request(app)
       .get("/api/v1/profiles")
       .query({ limit: 10 })
+      .set("x-client-type", "cli")
       .set("Authorization", `Bearer ${analystToken()}`);
-    const { total, limit, totalPages } = res.body.meta;
-    expect(totalPages).toBe(Math.ceil(total / limit));
-    // Explicitly verify it's not Math.floor
+    const { total, limit, total_pages } = res.body;
+    expect(total_pages).toBe(Math.ceil(total / limit));
     if (total % limit !== 0) {
-      expect(totalPages).toBeGreaterThan(Math.floor(total / limit));
+      expect(total_pages).toBeGreaterThan(Math.floor(total / limit));
     }
   });
 });
@@ -529,7 +566,6 @@ describe("GET /api/v1/profiles — pagination edge cases", () => {
 
 describe("Rate limiting", () => {
   it("auth limiter returns 429 after 10 requests in the window", async () => {
-    // Build a separate app with the auth limiter applied
     const { authLimiter } = await import("../../src/middleware/rate-limiting");
     const { Router: R } = await import("express");
     const limitedApp = express();
@@ -540,17 +576,15 @@ describe("Rate limiting", () => {
     );
     limitedApp.use(r);
 
-    // Fire 10 requests (the limit)
     for (let i = 0; i < 10; i++) {
       await request(limitedApp).get("/test");
     }
 
-    // 11th should be rate limited
     const res = await request(limitedApp).get("/test");
     expect(res.status).toBe(429);
   });
 
-  it("app limiter returns 429 after 100 requests in the window", async () => {
+  it("app limiter returns 429 after 60 requests in the window", async () => {
     const { appLimiter } = await import("../../src/middleware/rate-limiting");
     const { Router: R } = await import("express");
     const limitedApp = express();
@@ -561,7 +595,7 @@ describe("Rate limiting", () => {
     );
     limitedApp.use(r);
 
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 60; i++) {
       await request(limitedApp).get("/test");
     }
 
