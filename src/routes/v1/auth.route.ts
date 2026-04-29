@@ -1,6 +1,6 @@
 import { Router } from "express";
 import {
-  toGithubRedirect,
+  githubRedirect,
   githubCallback,
   refresh,
   logout,
@@ -10,7 +10,7 @@ import { authenticate } from "../../middleware/authenticate";
 
 const router = Router();
 
-router.get("/github", toGithubRedirect);
+router.get("/github", githubRedirect);
 router.get("/github/callback", githubCallback);
 router.post("/refresh", refresh);
 router.post("/logout", logout);

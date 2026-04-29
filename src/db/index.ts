@@ -270,15 +270,19 @@ export class DatabaseClient {
     github_id: string;
     username: string;
     email: string | null;
+    avatar_url: string | null;
+    last_login_at: Date;
   }): Promise<User> {
     const result = await this.pool.query<User>(
-      `INSERT INTO users (id, github_id, username, email)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO users (id, github_id, username, email, avatar_url, last_login_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (github_id) DO UPDATE
          SET username = EXCLUDED.username,
-             email = EXCLUDED.email
-       RETURNING id, github_id, username, email, role, created_at`,
-      [user.id, user.github_id, user.username, user.email],
+             email = EXCLUDED.email,
+             avatar_url = EXCLUDED.avatar_url,
+             last_login_at = EXCLUDED.last_login_at
+       RETURNING id, github_id, username, email, avatar_url, last_login_at, role, created_at`,
+      [user.id, user.github_id, user.username, user.email, user.avatar_url, user.last_login_at],
     );
     return result.rows[0];
   }
@@ -317,7 +321,7 @@ export class DatabaseClient {
 
   async getUserById(id: string): Promise<User | null> {
     const result = await this.pool.query<User>(
-      `SELECT id, github_id, username, email, role, created_at
+      `SELECT id, github_id, username, email, avatar_url, role, is_active, last_login_at, created_at
        FROM users WHERE id = $1`,
       [id],
     );
