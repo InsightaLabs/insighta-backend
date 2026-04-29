@@ -5,17 +5,23 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import * as uuid from "uuid";
 import { DatabaseClient } from "../db";
+import { parseExpiryMs } from "../utils";
 
 config();
 
 const githubClientId = process.env.GITHUB_CLIENT_ID;
+const githubCliClientId = process.env.GITHUB_CLI_CLIENT_ID;
 const githubSecret = process.env.GITHUB_SECRET;
+const githubCliSecret = process.env.GITHUB_CLI_SECRET;
 const githubCallbackUrl = process.env.GITHUB_CALLBACK_URL;
+const githubCliCallbackUrl = process.env.GITHUB_CLI_CALLBACK_URL
 const jwtSecret = process.env.JWT_SECRET;
+const jwtExpiry = process.env.JWT_EXPIRY;
+const refreshTokenExpiry = process.env.REFRESH_TOKEN_EXPIRY;
 
-if (!githubClientId || !githubCallbackUrl || !githubSecret || !jwtSecret) {
+if (!githubClientId || !githubCliClientId || !githubCallbackUrl || !githubCliCallbackUrl || !githubSecret || !githubCliSecret || !jwtSecret || !jwtExpiry || !refreshTokenExpiry) {
   throw new Error(
-    "Missing required environment variables: GITHUB_CLIENT_ID, GITHUB_SECRET, GITHUB_CALLBACK_URL, JWT_SECRET",
+    "Missing required environment variables: GITHUB_CLIENT_ID, GITHUB_SECRET, GITHUB_CALLBACK_URL, JWT_SECRET, JWT_EXPIRY, REFRESH_TOKEN_EXPIRY",
   );
 }
 
@@ -36,7 +42,7 @@ function generateCodeChallenge(verifier: string): string {
   return crypto.createHash("sha256").update(verifier).digest("base64url");
 }
 
-export async function toGithubRedirect(req: Request, res: Response) {
+export async function githubRedirect(req: Request, res: Response) {
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = generateCodeChallenge(codeVerifier);
   const state = crypto.randomBytes(16).toString("hex");
@@ -54,45 +60,63 @@ export async function toGithubRedirect(req: Request, res: Response) {
     state,
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
-    response_type: "code",
+    // response_type: "code",
   });
 
   res.redirect(`https://github.com/login/oauth/authorize?${params}`);
 }
 
 export async function githubCallback(req: Request, res: Response) {
-  const { code, state } = req.query;
+  const isCLI = req.headers['x-client-type'] === 'cli';
+  
+  let code: string;
+  let codeVerifier: string | undefined;
+  
+  if (isCLI) {
+    // const body = req.body;
+    console.log("Request from CLI")
+    const { code: cliCode, state } = req.query;
+    if (!cliCode || typeof cliCode !== 'string') return res.status(400).json({ status: 'error', message: 'Missing code' });
+    code = cliCode;
+    codeVerifier = state as string;
+  } else {
+    const { code: qCode, state } = req.query;
+    
+    // 1. Validate state and retrieve PKCE verifier
+    if (!state || typeof state !== "string") {
+      return res
+        .status(400)
+        .json({ status: "error", message: "Missing state parameter" });
+    }
+  
+    const pkceEntry = pkceStore.get(state);
+    if (!pkceEntry) {
+      return res
+        .status(400)
+        .json({ status: "error", message: "Invalid or expired state" });
+    }
+    if (Date.now() > pkceEntry.expiresAt) {
+      pkceStore.delete(state);
+      return res
+        .status(400)
+        .json({ status: "error", message: "State expired, please try again" });
+    }
+  
+    pkceStore.delete(state); // one-time use
+  
+    if (!qCode || typeof qCode !== "string") {
+      return res
+        .status(400)
+        .json({ status: "error", message: "Missing authorization code" });
+    }
 
-  // 1. Validate state and retrieve PKCE verifier
-  if (!state || typeof state !== "string") {
-    return res
-      .status(400)
-      .json({ status: "error", message: "Missing state parameter" });
-  }
-
-  const pkceEntry = pkceStore.get(state);
-  if (!pkceEntry) {
-    return res
-      .status(400)
-      .json({ status: "error", message: "Invalid or expired state" });
-  }
-  if (Date.now() > pkceEntry.expiresAt) {
-    pkceStore.delete(state);
-    return res
-      .status(400)
-      .json({ status: "error", message: "State expired, please try again" });
-  }
-
-  pkceStore.delete(state); // one-time use
-
-  if (!code || typeof code !== "string") {
-    return res
-      .status(400)
-      .json({ status: "error", message: "Missing authorization code" });
+    code = qCode;
+    codeVerifier = pkceEntry.codeVerifier;
   }
 
   try {
     // 2. Exchange code + verifier for GitHub access token
+    console.log("Cli Callback URL: ", githubCliCallbackUrl);
     const tokenRes = await fetch(
       "https://github.com/login/oauth/access_token",
       {
@@ -102,11 +126,12 @@ export async function githubCallback(req: Request, res: Response) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          client_id: githubClientId,
-          client_secret: githubSecret,
+          client_id: isCLI ? githubCliClientId : githubClientId,
+          client_secret: isCLI ? githubCliSecret : githubSecret,
           code,
-          redirect_uri: githubCallbackUrl,
-          code_verifier: pkceEntry.codeVerifier,
+          redirect_uri: isCLI ? githubCliCallbackUrl : githubCallbackUrl,
+          // code_verifier: pkceEntry.codeVerifier,
+          ...(codeVerifier && { code_verifier: codeVerifier })
         }),
       },
     );
@@ -115,6 +140,7 @@ export async function githubCallback(req: Request, res: Response) {
       access_token?: string;
       error?: string;
     };
+    console.log("tokenData: ", tokenData);
 
     if (!tokenData.access_token) {
       return res
@@ -137,7 +163,11 @@ export async function githubCallback(req: Request, res: Response) {
       id: number;
       login: string;
       email?: string;
+      avatar_url: string;
     };
+    console.log(githubUser);
+
+    const last_login_at = new Date();
 
     if (!githubUser.id) {
       return res
@@ -151,6 +181,8 @@ export async function githubCallback(req: Request, res: Response) {
       github_id: String(githubUser.id),
       username: githubUser.login,
       email: githubUser.email ?? null,
+      avatar_url: githubUser.avatar_url,
+      last_login_at
     });
 
     // 5. Issue access token (JWT, 15 min)
@@ -166,7 +198,9 @@ export async function githubCallback(req: Request, res: Response) {
       .createHash("sha256")
       .update(rawRefreshToken)
       .digest("hex");
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    const refreshExpiryMs = parseExpiryMs(refreshTokenExpiry as string);
+    const accessExpiryMs = parseExpiryMs(jwtExpiry as string)
+    const expiresAt = new Date(Date.now() + refreshExpiryMs); // 7 days
 
     await dbClient.createSession({
       id: uuid.v7(),
@@ -192,7 +226,14 @@ export async function githubCallback(req: Request, res: Response) {
         sameSite: 'strict',
       });
 
-      return res.redirect(`${process.env.WEB_PORTAL_URL}/dashboard?access_token=${accessToken}`);
+      res.cookie('access_token', accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: accessExpiryMs,
+      });
+
+      return res.redirect(`${process.env.WEB_PORTAL_URL}/dashboard`);
     }
 
     return res.status(200).json({
@@ -200,7 +241,7 @@ export async function githubCallback(req: Request, res: Response) {
       access_token: accessToken,
       refresh_token: rawRefreshToken,
       token_type: "Bearer",
-      expires_in: 900, // 15 minutes in seconds
+      expires_in: accessExpiryMs / 1000, // 15 minutes in seconds
     });
   } catch (err) {
     console.error(err);
@@ -270,11 +311,13 @@ export async function refresh(req: Request, res: Response) {
 
     // 8. Issue new refresh token (opaque, stored hashed in sessions table)
     const newRawRefreshToken = crypto.randomBytes(32).toString("hex");
+    const refreshExpiryMs = parseExpiryMs(refreshTokenExpiry as string);
+    const accessExpiryMs = parseExpiryMs(jwtExpiry as string)
     const newTokenHash = crypto
       .createHash("sha256")
       .update(newRawRefreshToken)
       .digest("hex");
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    const expiresAt = new Date(Date.now() + refreshExpiryMs);
 
     await dbClient.createSession({
       id: uuid.v7(),
@@ -288,7 +331,7 @@ export async function refresh(req: Request, res: Response) {
       access_token: accessToken,
       refresh_token: newRawRefreshToken,
       token_type: "Bearer",
-      expires_in: 900, // 15 minutes in seconds
+      expires_in: accessExpiryMs / 1000, // 15 minutes in seconds
     });
   } catch (err) {
     console.error(err);
@@ -353,6 +396,7 @@ export async function me(req: Request, res: Response) {
         id: user.id,
         username: user.username,
         email: user.email,
+        avatar_url: user.avatar_url,
         role: user.role,
         created_at: user.created_at,
       },
