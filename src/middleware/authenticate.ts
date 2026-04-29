@@ -10,19 +10,39 @@ if (!jwtSecret) {
   throw new Error("Missing required environment variable: JWT_SECRET");
 }
 
-export function authenticate(req: Request, res: Response, next: NextFunction) {
+let dbClient: DatabaseClient | null = null;
+
+function getDbClient(): DatabaseClient {
+  if (!dbClient) {
+    dbClient = new DatabaseClient();
+  }
+  return dbClient;
+}
+
+export async function authenticate(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  const isCLI = req.headers["x-client-type"] === "cli";
   const authHeader = req.headers.authorization;
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res
-      .status(401)
-      .json({
-        status: "error",
-        message: "Missing or invalid Authorization header",
-      });
+  let token: string | undefined;
+
+  // Accept Bearer token from any client (CLI or web with Authorization header)
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    token = authHeader.slice(7);
+  } else if (!isCLI) {
+    // Web portal: fall back to httpOnly cookie
+    token = req.cookies?.access_token;
   }
 
-  const token = authHeader.slice(7);
+  if (!token) {
+    return res.status(401).json({
+      status: "error",
+      message: "Missing or invalid Authorization header",
+    });
+  }
 
   try {
     const payload = jwt.verify(token, jwtSecret as string) as {

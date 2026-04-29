@@ -1,9 +1,11 @@
 import rateLimit from 'express-rate-limit';
 
 export const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, limit: 10
+  windowMs: 1 * 60 * 1000,
+  limit: 10,
 });
 
 export const appLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, limit: 100
-})
+  windowMs: 1 * 60 * 1000,
+  limit: 60,
+});

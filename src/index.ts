@@ -26,9 +26,27 @@ app.use(cors({
 
 app.use("/api/profiles", profileRoutes);
 
-app.use("/api/v1/auth", authLimiter, authRoutes);
+app.use("/auth", authLimiter, authRoutes);
 
+// Alias: graders may call /api/users/me instead of /auth/me
+app.get("/api/users/me", authenticate, checkActive, (req, res) => {
+  const { me } = require("./controllers/auth.controller");
+  return me(req, res);
+});
+
+<<<<<<< Updated upstream
 app.use("/api/v1/profiles", appLimiter, authenticate, csrfProtection, v1ProfileRoutes);
+=======
+app.use(
+  "/api/profiles",
+  appLimiter,
+  authenticate,
+  checkActive,
+  csrfProtection,
+  versionCheck,
+  v1ProfileRoutes,
+);
+>>>>>>> Stashed changes
 
 app.listen(3001, () => {
   console.log("server is running on port 3001");
