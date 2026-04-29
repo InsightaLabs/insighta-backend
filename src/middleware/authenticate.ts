@@ -1,6 +1,7 @@
 import { type Request, type Response, type NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { config } from "dotenv";
+import { DatabaseClient } from "../db";
 
 config();
 
@@ -10,25 +11,46 @@ if (!jwtSecret) {
   throw new Error("Missing required environment variable: JWT_SECRET");
 }
 
-export function authenticate(req: Request, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
+const dbClient = new DatabaseClient();
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res
-      .status(401)
-      .json({
+export async function authenticate(req: Request, res: Response, next: NextFunction) {
+  const isCLI = req.headers['x-client-type'] === 'cli';
+
+  let token: string;
+  if (isCLI) {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res
+        .status(401)
+        .json({
+          status: "error",
+          message: "Missing or invalid Authorization header",
+        });
+    }
+    token = authHeader.slice(7);
+  } else {
+    token = req.cookies?.access_token;
+    if (!token) {
+      return res.status(401).json({
         status: "error",
-        message: "Missing or invalid Authorization header",
-      });
+        message: "Missing access token"
+      })
+    }
   }
-
-  const token = authHeader.slice(7);
 
   try {
     const payload = jwt.verify(token, jwtSecret as string) as {
       userId: string;
       role: string;
     };
+    const user = await dbClient.getUserById(payload.userId);
+    if (!user || !user.is_active) {
+      return res.status(403).json({
+        status: "error",
+        message: "Deactivated User"
+      })
+    }
     req.user = { userId: payload.userId, role: payload.role };
     next();
   } catch (err) {
