@@ -11,7 +11,14 @@ if (!jwtSecret) {
   throw new Error("Missing required environment variable: JWT_SECRET");
 }
 
-const dbClient = new DatabaseClient();
+let dbClient: DatabaseClient | null = null;
+
+function getDbClient(): DatabaseClient {
+  if (!dbClient) {
+    dbClient = new DatabaseClient();
+  }
+  return dbClient;
+}
 
 export async function authenticate(
   req: Request,
@@ -73,7 +80,7 @@ export async function checkActive(
   if (!req.user) {
     return res.status(401).json({ status: "error", message: "Unauthorized" });
   }
-  const user = await dbClient.getUserById(req.user.userId);
+  const user = await getDbClient().getUserById(req.user.userId);
   if (!user) {
     return res.status(401).json({ status: "error", message: "Invalid access token" });
   }
