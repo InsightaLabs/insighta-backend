@@ -10,6 +10,7 @@ import { appLimiter, authLimiter } from "./middleware/rate-limiting";
 import { config } from "dotenv";
 import { csrfProtection } from "./middleware/csrf";
 import { versionCheck } from "./middleware/version-check";
+import { requestLogger } from "./middleware/logger";
 
 config();
 
@@ -19,6 +20,7 @@ buildCountryMap(countryMap);
 
 app.use(express.json());
 app.use(cookieParser());
+app.use(requestLogger);
 // app.use(cors());
 app.use(cors({
   origin: process.env.WEB_PORTAL_URL,
