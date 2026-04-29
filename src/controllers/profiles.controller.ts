@@ -169,6 +169,9 @@ export async function getAllProfiles(req: Request, res: Response) {
     limit,
   } = req.query;
 
+  const baseUrl = req.baseUrl;
+  const path = req.path;
+
   const options: AllProfileQueryOptions = {};
 
   if (gender !== undefined) {
@@ -320,24 +323,30 @@ export async function getAllProfiles(req: Request, res: Response) {
   try {
     const { page, limit, total, records } =
       await dbClient.getAllRecords(options);
-    // return res.status(200).json({
-    //   status: "success",
-    //   page,
-    //   limit,
-    //   total,
-    //   data: records,
-    // });
-    const totalPages = Math.ceil(total / limit);
+      const totalPages = Math.ceil(total / limit);
     return res.status(200).json({
       status: "success",
+      page,
+      limit,
+      total,
+      total_pages: totalPages,
+      links: {
+        self: `${baseUrl}/${path}?page=${page}&limit=${limit}`,
+        next: `${baseUrl}/${path}?page=${page + 1}&limit=${limit}`,
+        prev: page > 1 ? `${baseUrl}/${path}?page=${page}&limit=${limit}`: null
+      },
       data: records,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages
-      }
-    })
+    });
+    // return res.status(200).json({
+    //   status: "success",
+    //   data: records,
+    //   meta: {
+    //     page,
+    //     limit,
+    //     total,
+    //     totalPages
+    //   }
+    // })
   } catch (error) {
     return res.status(500).json({
       status: "error",
@@ -348,6 +357,10 @@ export async function getAllProfiles(req: Request, res: Response) {
 
 export async function searchForProfiles(req: Request, res: Response) {
   const { q } = req.query;
+  
+  const baseUrl = req.baseUrl;
+  const path = req.path;
+
   if (!q || typeof q !== "string") {
     return res.status(400).json({
       status: "error",
@@ -367,24 +380,30 @@ export async function searchForProfiles(req: Request, res: Response) {
   try {
     const { page, limit, total, records } =
       await dbClient.getAllRecords(options);
-    // return res.status(200).json({
-    //   status: "success",
-    //   page,
-    //   limit,
-    //   total,
-    //   data: records,
-    // });
-    const totalPages = Math.ceil(total / limit);
+      const totalPages = Math.ceil(total / limit);
     return res.status(200).json({
       status: "success",
+      page,
+      limit,
+      total,
+      total_pages: totalPages,
+      links: {
+        self: `${baseUrl}/${path}?page=${page}&limit=${limit}`,
+        next: `${baseUrl}/${path}?page=${page + 1}&limit=${limit}`,
+        prev: page > 1 ? `${baseUrl}/${path}?page=${page}&limit=${limit}`: null
+      },
       data: records,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages
-      }
-    })
+    });
+    // return res.status(200).json({
+    //   status: "success",
+    //   data: records,
+    //   meta: {
+    //     page,
+    //     limit,
+    //     total,
+    //     totalPages
+    //   }
+    // })
   } catch (error) {
     return res.status(500).json({
       status: "error",
@@ -479,7 +498,22 @@ export async function exportCSV(req: Request, res: Response) {
     min_country_probability,
     sort_by,
     order,
+    format
   } = req.query;
+
+  if (!format || typeof format !== 'string') {
+    return res.status(400).json({
+      status: "error",
+      message: "Export format required"
+    })
+  }
+
+  if (format.toLowerCase() !== 'csv') {
+    return res.status(400).json({
+      status: "error",
+      message: "Invalid export format"
+    })
+  }
 
   const options: AllProfileQueryOptions = {
     limit: 1000, // fetch all — no pagination for export
@@ -556,8 +590,9 @@ export async function exportCSV(req: Request, res: Response) {
       "country_probability", "created_at",
     ];
 
+    let now = new Date().toISOString();
     res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", "attachment; filename=\"profiles.csv\"");
+    res.setHeader("Content-Disposition", `attachment; filename="profiles_${now}.csv"`);
 
     const stringifier = stringify({ header: true, columns });
 

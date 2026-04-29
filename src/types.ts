@@ -74,6 +74,9 @@ export type User = {
   username: string;
   email: string | null;
   role: UserRole;
+  avatar_url: string;
+  is_active: boolean,
+  last_login_at: Date;
   created_at: Date;
 };
 
