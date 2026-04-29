@@ -48,7 +48,11 @@ describe("csrfProtection middleware", () => {
   });
 
   it("does NOT bypass when Authorization is Basic (not Bearer)", () => {
-    const req = makeReq({ authorization: "Basic abc123", csrfHeader: "token", csrfCookie: "token" });
+    const req = makeReq({
+      authorization: "Basic abc123",
+      csrfHeader: "token",
+      csrfCookie: "token",
+    });
     const res = makeRes();
     const next = makeNext();
 
@@ -104,7 +108,10 @@ describe("csrfProtection middleware", () => {
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "error", message: "Invalid CSRF token" })
+      expect.objectContaining({
+        status: "error",
+        message: "Invalid CSRF token",
+      }),
     );
     expect(next).not.toHaveBeenCalled();
   });

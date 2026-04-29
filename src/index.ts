@@ -22,18 +22,33 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(requestLogger);
 // app.use(cors());
-app.use(cors({
-  origin: process.env.WEB_PORTAL_URL,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-API-Version', 'X-Client-Type']
-}))
+app.use(
+  cors({
+    origin: process.env.WEB_PORTAL_URL,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-CSRF-Token",
+      "X-API-Version",
+      "X-Client-Type",
+    ],
+  }),
+);
 
 // app.use("/api/profiles", profileRoutes);
 
 app.use("/auth", authLimiter, authRoutes);
 
-app.use("/api/profiles", appLimiter, authenticate, csrfProtection, versionCheck, v1ProfileRoutes);
+app.use(
+  "/api/profiles",
+  appLimiter,
+  authenticate,
+  csrfProtection,
+  versionCheck,
+  v1ProfileRoutes,
+);
 
 app.listen(3001, () => {
   console.log("server is running on port 3001");

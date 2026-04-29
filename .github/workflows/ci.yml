@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+
+jobs:
+  ci:
+    name: Lint, Test & Build
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: classification_user
+          POSTGRES_PASSWORD: classification_password
+          POSTGRES_DB: classification_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run migrations
+        run: |
+          psql postgresql://classification_user:classification_password@localhost:5432/classification_db \
+            -f migrations/001_create_classifications_table.sql
+          psql postgresql://classification_user:classification_password@localhost:5432/classification_db \
+            -f migrations/002_create_classifications_table.sql
+          psql postgresql://classification_user:classification_password@localhost:5432/classification_db \
+            -f migrations/003_create_users_and_sessions.sql
+
+      - name: Lint
+        run: pnpm format --check
+
+      - name: Test
+        run: pnpm test
+        env:
+          CLASSIFY_DB_URL: postgresql://classification_user:classification_password@localhost:5432/classification_db
+          GITHUB_CLIENT_ID: test_client_id
+          GITHUB_SECRET: test_secret
+          GITHUB_CALLBACK_URL: http://localhost:3001/auth/github/callback
+          JWT_SECRET: test_jwt_secret_for_ci
+          JWT_EXPIRY: 3m
+          REFRESH_TOKEN_EXPIRY: 5m
+          WEB_PORTAL_URL: http://localhost:3000
+          NODE_ENV: test
+
+      - name: Build
+        run: pnpm build

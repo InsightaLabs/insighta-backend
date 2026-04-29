@@ -27,7 +27,12 @@ const JWT_SECRET = process.env.JWT_SECRET!;
 const profilesRouter = Router();
 profilesRouter.post("/", authenticate, authorize("admin"), createProfile);
 profilesRouter.get("/", authenticate, authorize("analyst"), getAllProfiles);
-profilesRouter.get("/search", authenticate, authorize("analyst"), searchForProfiles);
+profilesRouter.get(
+  "/search",
+  authenticate,
+  authorize("analyst"),
+  searchForProfiles,
+);
 profilesRouter.get("/export", authenticate, authorize("analyst"), exportCSV);
 profilesRouter.get("/:id", authenticate, authorize("analyst"), getProfile);
 profilesRouter.delete("/:id", authenticate, authorize("admin"), deleteProfile);
@@ -39,7 +44,9 @@ app.use("/api/v1/profiles", profilesRouter);
 // ─── Token helpers ─────────────────────────────────────────────────────────
 
 function analystToken(userId = uuid.v7()) {
-  return jwt.sign({ userId, role: "analyst" }, JWT_SECRET, { expiresIn: "15m" });
+  return jwt.sign({ userId, role: "analyst" }, JWT_SECRET, {
+    expiresIn: "15m",
+  });
 }
 
 function adminToken(userId = uuid.v7()) {
@@ -47,7 +54,9 @@ function adminToken(userId = uuid.v7()) {
 }
 
 function expiredToken() {
-  return jwt.sign({ userId: uuid.v7(), role: "analyst" }, JWT_SECRET, { expiresIn: -1 } as any);
+  return jwt.sign({ userId: uuid.v7(), role: "analyst" }, JWT_SECRET, {
+    expiresIn: -1,
+  } as any);
 }
 
 // ─── GET /api/v1/profiles ──────────────────────────────────────────────────
@@ -177,7 +186,9 @@ describe("GET /api/v1/profiles — filters", () => {
 
 describe("GET /api/v1/profiles/search", () => {
   it("returns 401 with no token", async () => {
-    const res = await request(app).get("/api/v1/profiles/search").query({ q: "young males" });
+    const res = await request(app)
+      .get("/api/v1/profiles/search")
+      .query({ q: "young males" });
     expect(res.status).toBe(401);
   });
 
@@ -401,7 +412,17 @@ describe("DELETE /api/v1/profiles/:id — success", () => {
     await (db2 as any).pool.query(
       `INSERT INTO classifications (id, name, gender, gender_probability, age, age_group, country_id, country_name, country_probability)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [testId, `DeleteTestName_${Date.now()}`, "male", 0.95, 30, "adult", "NG", "Nigeria", 0.8]
+      [
+        testId,
+        `DeleteTestName_${Date.now()}`,
+        "male",
+        0.95,
+        30,
+        "adult",
+        "NG",
+        "Nigeria",
+        0.8,
+      ],
     );
 
     const res = await request(app)
@@ -514,7 +535,9 @@ describe("Rate limiting", () => {
     const limitedApp = express();
     limitedApp.use(express.json());
     const r = R();
-    r.get("/test", authLimiter, (_req, res) => res.status(200).json({ ok: true }));
+    r.get("/test", authLimiter, (_req, res) =>
+      res.status(200).json({ ok: true }),
+    );
     limitedApp.use(r);
 
     // Fire 10 requests (the limit)
@@ -533,7 +556,9 @@ describe("Rate limiting", () => {
     const limitedApp = express();
     limitedApp.use(express.json());
     const r = R();
-    r.get("/test", appLimiter, (_req, res) => res.status(200).json({ ok: true }));
+    r.get("/test", appLimiter, (_req, res) =>
+      res.status(200).json({ ok: true }),
+    );
     limitedApp.use(r);
 
     for (let i = 0; i < 100; i++) {

@@ -54,7 +54,7 @@ async function createTestUser(role: "analyst" | "admin" = "analyst") {
   if (role === "admin") {
     await (db as any).pool.query(
       `UPDATE users SET role = 'admin' WHERE id = $1`,
-      [user.id]
+      [user.id],
     );
     return { ...user, role: "admin" as const };
   }
@@ -65,7 +65,12 @@ async function createTestSession(userId: string) {
   const rawToken = crypto.randomBytes(32).toString("hex");
   const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  await db.createSession({ id: uuid.v7(), user_id: userId, token_hash: tokenHash, expires_at: expiresAt });
+  await db.createSession({
+    id: uuid.v7(),
+    user_id: userId,
+    token_hash: tokenHash,
+    expires_at: expiresAt,
+  });
   return rawToken;
 }
 
@@ -223,7 +228,10 @@ describe("POST /api/v1/auth/refresh", () => {
     const user = await createTestUser();
     createdUserIds.push(user.id);
     const rawToken = await createTestSession(user.id);
-    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(rawToken)
+      .digest("hex");
     await db.revokeSession(tokenHash);
 
     const res = await request(app)
@@ -238,7 +246,10 @@ describe("POST /api/v1/auth/refresh", () => {
     const user = await createTestUser();
     createdUserIds.push(user.id);
     const rawToken = crypto.randomBytes(32).toString("hex");
-    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(rawToken)
+      .digest("hex");
     const expiredAt = new Date(Date.now() - 1000); // already expired
 
     await db.createSession({
@@ -293,7 +304,10 @@ describe("POST /api/v1/auth/logout", () => {
     expect(res.body.message).toContain("Logged out");
 
     // Verify session is revoked in DB
-    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(rawToken)
+      .digest("hex");
     const session = await db.getSessionByTokenHash(tokenHash);
     expect(session!.revoked).toBe(true);
   });
@@ -303,8 +317,12 @@ describe("POST /api/v1/auth/logout", () => {
     createdUserIds.push(user.id);
     const rawToken = await createTestSession(user.id);
 
-    await request(app).post("/api/v1/auth/logout").send({ refresh_token: rawToken });
-    const res = await request(app).post("/api/v1/auth/logout").send({ refresh_token: rawToken });
+    await request(app)
+      .post("/api/v1/auth/logout")
+      .send({ refresh_token: rawToken });
+    const res = await request(app)
+      .post("/api/v1/auth/logout")
+      .send({ refresh_token: rawToken });
 
     expect(res.status).toBe(200);
   });
@@ -326,7 +344,9 @@ describe("GET /api/v1/auth/me", () => {
   });
 
   it("returns 401 for an expired token", async () => {
-    const token = jwt.sign({ userId: "u1", role: "analyst" }, JWT_SECRET, { expiresIn: -1 } as any);
+    const token = jwt.sign({ userId: "u1", role: "analyst" }, JWT_SECRET, {
+      expiresIn: -1,
+    } as any);
     const res = await request(app)
       .get("/api/v1/auth/me")
       .set("Authorization", `Bearer ${token}`);
@@ -395,12 +415,17 @@ describe("GET /api/v1/auth/github/callback — success path", () => {
 
     // Mock global fetch for this test
     const originalFetch = global.fetch;
-    global.fetch = vi.fn()
+    global.fetch = vi
+      .fn()
       .mockResolvedValueOnce({
         json: async () => ({ access_token: "gh_mock_token" }),
       } as any)
       .mockResolvedValueOnce({
-        json: async () => ({ id: githubUserId, login: "mockuser", email: "mock@example.com" }),
+        json: async () => ({
+          id: githubUserId,
+          login: "mockuser",
+          email: "mock@example.com",
+        }),
       } as any);
 
     const res = await request(app)
@@ -419,10 +444,9 @@ describe("GET /api/v1/auth/github/callback — success path", () => {
 
     // Cleanup
     const db2 = new DatabaseClient();
-    await (db2 as any).pool.query(
-      `DELETE FROM users WHERE github_id = $1`,
-      [String(githubUserId)]
-    );
+    await (db2 as any).pool.query(`DELETE FROM users WHERE github_id = $1`, [
+      String(githubUserId),
+    ]);
   });
 
   it("CLI path: access token contains correct userId and role", async () => {
@@ -435,9 +459,18 @@ describe("GET /api/v1/auth/github/callback — success path", () => {
     const githubUserId = Math.floor(Math.random() * 1_000_000) + 2_000_000;
 
     const originalFetch = global.fetch;
-    global.fetch = vi.fn()
-      .mockResolvedValueOnce({ json: async () => ({ access_token: "gh_mock_token" }) } as any)
-      .mockResolvedValueOnce({ json: async () => ({ id: githubUserId, login: "roleuser", email: null }) } as any);
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        json: async () => ({ access_token: "gh_mock_token" }),
+      } as any)
+      .mockResolvedValueOnce({
+        json: async () => ({
+          id: githubUserId,
+          login: "roleuser",
+          email: null,
+        }),
+      } as any);
 
     const res = await request(app)
       .get("/api/v1/auth/github/callback")
@@ -452,10 +485,9 @@ describe("GET /api/v1/auth/github/callback — success path", () => {
 
     // Cleanup
     const db2 = new DatabaseClient();
-    await (db2 as any).pool.query(
-      `DELETE FROM users WHERE github_id = $1`,
-      [String(githubUserId)]
-    );
+    await (db2 as any).pool.query(`DELETE FROM users WHERE github_id = $1`, [
+      String(githubUserId),
+    ]);
   });
 
   it("returns 502 when GitHub token exchange fails", async () => {
@@ -488,9 +520,14 @@ describe("GET /api/v1/auth/github/callback — success path", () => {
     });
 
     const originalFetch = global.fetch;
-    global.fetch = vi.fn()
-      .mockResolvedValueOnce({ json: async () => ({ access_token: "gh_mock_token" }) } as any)
-      .mockResolvedValueOnce({ json: async () => ({ login: "nouser" }) } as any); // no id
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        json: async () => ({ access_token: "gh_mock_token" }),
+      } as any)
+      .mockResolvedValueOnce({
+        json: async () => ({ login: "nouser" }),
+      } as any); // no id
 
     const res = await request(app)
       .get("/api/v1/auth/github/callback")
@@ -512,9 +549,18 @@ describe("GET /api/v1/auth/github/callback — success path", () => {
     const githubUserId = Math.floor(Math.random() * 1_000_000) + 4_000_000;
 
     const originalFetch = global.fetch;
-    global.fetch = vi.fn()
-      .mockResolvedValueOnce({ json: async () => ({ access_token: "gh_mock_token" }) } as any)
-      .mockResolvedValueOnce({ json: async () => ({ id: githubUserId, login: "browseruser", email: "browser@example.com" }) } as any);
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        json: async () => ({ access_token: "gh_mock_token" }),
+      } as any)
+      .mockResolvedValueOnce({
+        json: async () => ({
+          id: githubUserId,
+          login: "browseruser",
+          email: "browser@example.com",
+        }),
+      } as any);
 
     // No x-client-type: cli header → browser path
     const res = await request(app)
@@ -528,7 +574,11 @@ describe("GET /api/v1/auth/github/callback — success path", () => {
 
     // Should set refresh_token as httpOnly cookie
     const cookies = res.headers["set-cookie"] as string[] | string | undefined;
-    const cookieArr = Array.isArray(cookies) ? cookies : cookies ? [cookies] : [];
+    const cookieArr = Array.isArray(cookies)
+      ? cookies
+      : cookies
+        ? [cookies]
+        : [];
     const refreshCookie = cookieArr.find((c) => c.startsWith("refresh_token="));
     expect(refreshCookie).toBeDefined();
     expect(refreshCookie).toContain("HttpOnly");
@@ -540,10 +590,9 @@ describe("GET /api/v1/auth/github/callback — success path", () => {
 
     // Cleanup
     const db2 = new DatabaseClient();
-    await (db2 as any).pool.query(
-      `DELETE FROM users WHERE github_id = $1`,
-      [String(githubUserId)]
-    );
+    await (db2 as any).pool.query(`DELETE FROM users WHERE github_id = $1`, [
+      String(githubUserId),
+    ]);
   });
 });
 
@@ -552,7 +601,9 @@ describe("GET /api/v1/auth/github/callback — success path", () => {
 describe("GET /api/v1/auth/me — malformed payload", () => {
   it("returns 404 when token has no userId field", async () => {
     // Valid JWT but missing userId — authenticate passes, me handler gets undefined userId
-    const token = jwt.sign({ role: "analyst" }, JWT_SECRET, { expiresIn: "15m" });
+    const token = jwt.sign({ role: "analyst" }, JWT_SECRET, {
+      expiresIn: "15m",
+    });
     const res = await request(app)
       .get("/api/v1/auth/me")
       .set("Authorization", `Bearer ${token}`);
@@ -589,7 +640,10 @@ describe("POST /api/v1/auth/refresh — user deleted mid-session", () => {
     // We simulate by creating a session for a non-existent user_id directly.
     const orphanUserId = uuid.v7(); // does not exist in users table
     const orphanRawToken = crypto.randomBytes(32).toString("hex");
-    const orphanHash = crypto.createHash("sha256").update(orphanRawToken).digest("hex");
+    const orphanHash = crypto
+      .createHash("sha256")
+      .update(orphanRawToken)
+      .digest("hex");
 
     // Insert session bypassing FK (won't work with FK constraint) — instead test via
     // deleting user after session creation using a deferred approach:

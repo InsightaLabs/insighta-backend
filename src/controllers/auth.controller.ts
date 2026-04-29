@@ -14,12 +14,22 @@ const githubCliClientId = process.env.GITHUB_CLI_CLIENT_ID;
 const githubSecret = process.env.GITHUB_SECRET;
 const githubCliSecret = process.env.GITHUB_CLI_SECRET;
 const githubCallbackUrl = process.env.GITHUB_CALLBACK_URL;
-const githubCliCallbackUrl = process.env.GITHUB_CLI_CALLBACK_URL
+const githubCliCallbackUrl = process.env.GITHUB_CLI_CALLBACK_URL;
 const jwtSecret = process.env.JWT_SECRET;
 const jwtExpiry = process.env.JWT_EXPIRY;
 const refreshTokenExpiry = process.env.REFRESH_TOKEN_EXPIRY;
 
-if (!githubClientId || !githubCliClientId || !githubCallbackUrl || !githubCliCallbackUrl || !githubSecret || !githubCliSecret || !jwtSecret || !jwtExpiry || !refreshTokenExpiry) {
+if (
+  !githubClientId ||
+  !githubCliClientId ||
+  !githubCallbackUrl ||
+  !githubCliCallbackUrl ||
+  !githubSecret ||
+  !githubCliSecret ||
+  !jwtSecret ||
+  !jwtExpiry ||
+  !refreshTokenExpiry
+) {
   throw new Error(
     "Missing required environment variables: GITHUB_CLIENT_ID, GITHUB_SECRET, GITHUB_CALLBACK_URL, JWT_SECRET, JWT_EXPIRY, REFRESH_TOKEN_EXPIRY",
   );
@@ -67,28 +77,29 @@ export async function githubRedirect(req: Request, res: Response) {
 }
 
 export async function githubCallback(req: Request, res: Response) {
-  const isCLI = req.headers['x-client-type'] === 'cli';
-  
+  const isCLI = req.headers["x-client-type"] === "cli";
+
   let code: string;
   let codeVerifier: string | undefined;
-  
+
   if (isCLI) {
     // const body = req.body;
-    console.log("Request from CLI")
+    console.log("Request from CLI");
     const { code: cliCode, state } = req.query;
-    if (!cliCode || typeof cliCode !== 'string') return res.status(400).json({ status: 'error', message: 'Missing code' });
+    if (!cliCode || typeof cliCode !== "string")
+      return res.status(400).json({ status: "error", message: "Missing code" });
     code = cliCode;
     codeVerifier = state as string;
   } else {
     const { code: qCode, state } = req.query;
-    
+
     // 1. Validate state and retrieve PKCE verifier
     if (!state || typeof state !== "string") {
       return res
         .status(400)
         .json({ status: "error", message: "Missing state parameter" });
     }
-  
+
     const pkceEntry = pkceStore.get(state);
     if (!pkceEntry) {
       return res
@@ -101,9 +112,9 @@ export async function githubCallback(req: Request, res: Response) {
         .status(400)
         .json({ status: "error", message: "State expired, please try again" });
     }
-  
+
     pkceStore.delete(state); // one-time use
-  
+
     if (!qCode || typeof qCode !== "string") {
       return res
         .status(400)
@@ -131,7 +142,7 @@ export async function githubCallback(req: Request, res: Response) {
           code,
           redirect_uri: isCLI ? githubCliCallbackUrl : githubCallbackUrl,
           // code_verifier: pkceEntry.codeVerifier,
-          ...(codeVerifier && { code_verifier: codeVerifier })
+          ...(codeVerifier && { code_verifier: codeVerifier }),
         }),
       },
     );
@@ -143,12 +154,10 @@ export async function githubCallback(req: Request, res: Response) {
     console.log("tokenData: ", tokenData);
 
     if (!tokenData.access_token) {
-      return res
-        .status(502)
-        .json({
-          status: "error",
-          message: "Failed to obtain GitHub access token",
-        });
+      return res.status(502).json({
+        status: "error",
+        message: "Failed to obtain GitHub access token",
+      });
     }
 
     // 3. Fetch GitHub user info
@@ -182,7 +191,7 @@ export async function githubCallback(req: Request, res: Response) {
       username: githubUser.login,
       email: githubUser.email ?? null,
       avatar_url: githubUser.avatar_url,
-      last_login_at
+      last_login_at,
     });
 
     // 5. Issue access token (JWT, 15 min)
@@ -199,7 +208,7 @@ export async function githubCallback(req: Request, res: Response) {
       .update(rawRefreshToken)
       .digest("hex");
     const refreshExpiryMs = parseExpiryMs(refreshTokenExpiry as string);
-    const accessExpiryMs = parseExpiryMs(jwtExpiry as string)
+    const accessExpiryMs = parseExpiryMs(jwtExpiry as string);
     const expiresAt = new Date(Date.now() + refreshExpiryMs); // 7 days
 
     await dbClient.createSession({
@@ -209,19 +218,21 @@ export async function githubCallback(req: Request, res: Response) {
       expires_at: expiresAt,
     });
 
-    const isBrowser = req.headers['x-client-type'] !== 'cli';
+    const isBrowser = req.headers["x-client-type"] !== "cli";
 
     if (isBrowser) {
-      const csrfToken = crypto.randomBytes(32).toString('hex');
+      const csrfToken = crypto.randomBytes(32).toString("hex");
 
       // Redirect to the portal's callback route handler which sets the cookies
       // on the portal's own domain. This is required when the backend and portal
       // are on different domains (e.g. Railway + Vercel) — cookies set by the
       // backend would be scoped to the backend domain and never sent to the portal.
-      const callbackUrl = new URL(`${process.env.WEB_PORTAL_URL}/api/auth/callback`);
-      callbackUrl.searchParams.set('access_token', accessToken);
-      callbackUrl.searchParams.set('refresh_token', rawRefreshToken);
-      callbackUrl.searchParams.set('csrf_token', csrfToken);
+      const callbackUrl = new URL(
+        `${process.env.WEB_PORTAL_URL}/api/auth/callback`,
+      );
+      callbackUrl.searchParams.set("access_token", accessToken);
+      callbackUrl.searchParams.set("refresh_token", rawRefreshToken);
+      callbackUrl.searchParams.set("csrf_token", csrfToken);
 
       return res.redirect(callbackUrl.toString());
     }
@@ -302,7 +313,7 @@ export async function refresh(req: Request, res: Response) {
     // 8. Issue new refresh token (opaque, stored hashed in sessions table)
     const newRawRefreshToken = crypto.randomBytes(32).toString("hex");
     const refreshExpiryMs = parseExpiryMs(refreshTokenExpiry as string);
-    const accessExpiryMs = parseExpiryMs(jwtExpiry as string)
+    const accessExpiryMs = parseExpiryMs(jwtExpiry as string);
     const newTokenHash = crypto
       .createHash("sha256")
       .update(newRawRefreshToken)

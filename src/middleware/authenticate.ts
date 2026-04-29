@@ -13,20 +13,22 @@ if (!jwtSecret) {
 
 const dbClient = new DatabaseClient();
 
-export async function authenticate(req: Request, res: Response, next: NextFunction) {
-  const isCLI = req.headers['x-client-type'] === 'cli';
+export async function authenticate(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  const isCLI = req.headers["x-client-type"] === "cli";
 
   let token: string;
   if (isCLI) {
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res
-        .status(401)
-        .json({
-          status: "error",
-          message: "Missing or invalid Authorization header",
-        });
+      return res.status(401).json({
+        status: "error",
+        message: "Missing or invalid Authorization header",
+      });
     }
     token = authHeader.slice(7);
   } else {
@@ -34,8 +36,8 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     if (!token) {
       return res.status(401).json({
         status: "error",
-        message: "Missing access token"
-      })
+        message: "Missing access token",
+      });
     }
   }
 
@@ -48,8 +50,8 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     if (!user || !user.is_active) {
       return res.status(403).json({
         status: "error",
-        message: "Deactivated User"
-      })
+        message: "Deactivated User",
+      });
     }
     req.user = { userId: payload.userId, role: payload.role };
     next();
