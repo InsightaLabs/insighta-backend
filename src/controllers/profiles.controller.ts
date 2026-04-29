@@ -204,6 +204,7 @@ export async function getAllProfiles(req: Request, res: Response) {
         message: "Invalid query paramters",
       });
     }
+    options.country_id = country_id;
   }
 
   if (age_group !== undefined) {
@@ -500,6 +501,7 @@ export async function exportCSV(req: Request, res: Response) {
     order,
     format
   } = req.query;
+  console.log("Request to export...")
 
   if (!format || typeof format !== 'string') {
     return res.status(400).json({
