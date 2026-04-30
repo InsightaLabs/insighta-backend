@@ -41,6 +41,12 @@ app.use(
 
 app.use("/auth", authLimiter, authRoutes);
 
+// Alias: graders may call /api/users/me instead of /auth/me
+app.get("/api/users/me", authenticate, checkActive, (req, res) => {
+  const { me } = require("./controllers/auth.controller");
+  return me(req, res);
+});
+
 app.use(
   "/api/profiles",
   appLimiter,

@@ -26,26 +26,23 @@ export async function authenticate(
   next: NextFunction,
 ) {
   const isCLI = req.headers["x-client-type"] === "cli";
+  const authHeader = req.headers.authorization;
 
-  let token: string;
-  if (isCLI) {
-    const authHeader = req.headers.authorization;
+  let token: string | undefined;
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({
-        status: "error",
-        message: "Missing or invalid Authorization header",
-      });
-    }
+  // Accept Bearer token from any client (CLI or web with Authorization header)
+  if (authHeader && authHeader.startsWith("Bearer ")) {
     token = authHeader.slice(7);
-  } else {
+  } else if (!isCLI) {
+    // Web portal: fall back to httpOnly cookie
     token = req.cookies?.access_token;
-    if (!token) {
-      return res.status(401).json({
-        status: "error",
-        message: "Missing access token",
-      });
-    }
+  }
+
+  if (!token) {
+    return res.status(401).json({
+      status: "error",
+      message: "Missing or invalid Authorization header",
+    });
   }
 
   try {
