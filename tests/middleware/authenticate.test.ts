@@ -3,11 +3,29 @@ import jwt from "jsonwebtoken";
 import { authenticate } from "../../src/middleware/authenticate";
 import type { Request, Response, NextFunction } from "express";
 
-const JWT_SECRET = process.env.JWT_SECRET ?? "insighta_jwt_secret_change_in_production";
+const JWT_SECRET =
+  process.env.JWT_SECRET ?? "insighta_jwt_secret_change_in_production";
+
+// Mock the DatabaseClient so tests don't hit the real DB
+vi.mock("../../src/db", () => {
+  const mockGetUserById = vi.fn().mockResolvedValue({
+    id: "user-123",
+    is_active: true,
+    role: "analyst",
+  });
+  return {
+    DatabaseClient: vi.fn().mockImplementation(() => ({
+      getUserById: mockGetUserById,
+    })),
+  };
+});
 
 function makeReq(authHeader?: string): Partial<Request> {
   return {
-    headers: authHeader ? { authorization: authHeader } : {},
+    headers: authHeader
+      ? { authorization: authHeader, 'x-client-type': 'cli' }
+      : {},
+    cookies: {},
   } as Partial<Request>;
 }
 
@@ -71,13 +89,14 @@ describe("authenticate middleware", () => {
 
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ message: "Access token expired" })
+      expect.objectContaining({ message: "Access token expired" }),
     );
     expect(next).not.toHaveBeenCalled();
   });
 
   it("returns 401 with 'Invalid access token' for a tampered token", () => {
-    const token = signToken({ userId: "user-123", role: "analyst" }) + "tampered";
+    const token =
+      signToken({ userId: "user-123", role: "analyst" }) + "tampered";
     const req = makeReq(`Bearer ${token}`) as Request;
     const res = makeRes();
     const next = makeNext();
@@ -86,13 +105,16 @@ describe("authenticate middleware", () => {
 
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ message: "Invalid access token" })
+      expect.objectContaining({ message: "Invalid access token" }),
     );
     expect(next).not.toHaveBeenCalled();
   });
 
   it("returns 401 for a token signed with a different secret", () => {
-    const token = jwt.sign({ userId: "user-123", role: "analyst" }, "wrong-secret");
+    const token = jwt.sign(
+      { userId: "user-123", role: "analyst" },
+      "wrong-secret",
+    );
     const req = makeReq(`Bearer ${token}`) as Request;
     const res = makeRes();
     const next = makeNext();

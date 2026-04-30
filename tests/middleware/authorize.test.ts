@@ -113,7 +113,7 @@ describe("authorize middleware", () => {
     authorize("admin")(req, res, next);
 
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "error" })
+      expect.objectContaining({ status: "error" }),
     );
   });
 });

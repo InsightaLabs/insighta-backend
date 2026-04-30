@@ -169,6 +169,9 @@ export async function getAllProfiles(req: Request, res: Response) {
     limit,
   } = req.query;
 
+  const baseUrl = req.baseUrl;
+  const path = req.path;
+
   const options: AllProfileQueryOptions = {};
 
   if (gender !== undefined) {
@@ -201,6 +204,7 @@ export async function getAllProfiles(req: Request, res: Response) {
         message: "Invalid query paramters",
       });
     }
+    options.country_id = country_id;
   }
 
   if (age_group !== undefined) {
@@ -320,24 +324,31 @@ export async function getAllProfiles(req: Request, res: Response) {
   try {
     const { page, limit, total, records } =
       await dbClient.getAllRecords(options);
-    // return res.status(200).json({
-    //   status: "success",
-    //   page,
-    //   limit,
-    //   total,
-    //   data: records,
-    // });
     const totalPages = Math.ceil(total / limit);
     return res.status(200).json({
       status: "success",
+      page,
+      limit,
+      total,
+      total_pages: totalPages,
+      links: {
+        self: `${baseUrl}/${path}?page=${page}&limit=${limit}`,
+        next: `${baseUrl}/${path}?page=${page + 1}&limit=${limit}`,
+        prev:
+          page > 1 ? `${baseUrl}/${path}?page=${page}&limit=${limit}` : null,
+      },
       data: records,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages
-      }
-    })
+    });
+    // return res.status(200).json({
+    //   status: "success",
+    //   data: records,
+    //   meta: {
+    //     page,
+    //     limit,
+    //     total,
+    //     totalPages
+    //   }
+    // })
   } catch (error) {
     return res.status(500).json({
       status: "error",
@@ -348,6 +359,10 @@ export async function getAllProfiles(req: Request, res: Response) {
 
 export async function searchForProfiles(req: Request, res: Response) {
   const { q } = req.query;
+
+  const baseUrl = req.baseUrl;
+  const path = req.path;
+
   if (!q || typeof q !== "string") {
     return res.status(400).json({
       status: "error",
@@ -367,24 +382,31 @@ export async function searchForProfiles(req: Request, res: Response) {
   try {
     const { page, limit, total, records } =
       await dbClient.getAllRecords(options);
-    // return res.status(200).json({
-    //   status: "success",
-    //   page,
-    //   limit,
-    //   total,
-    //   data: records,
-    // });
     const totalPages = Math.ceil(total / limit);
     return res.status(200).json({
       status: "success",
+      page,
+      limit,
+      total,
+      total_pages: totalPages,
+      links: {
+        self: `${baseUrl}/${path}?page=${page}&limit=${limit}`,
+        next: `${baseUrl}/${path}?page=${page + 1}&limit=${limit}`,
+        prev:
+          page > 1 ? `${baseUrl}/${path}?page=${page}&limit=${limit}` : null,
+      },
       data: records,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages
-      }
-    })
+    });
+    // return res.status(200).json({
+    //   status: "success",
+    //   data: records,
+    //   meta: {
+    //     page,
+    //     limit,
+    //     total,
+    //     totalPages
+    //   }
+    // })
   } catch (error) {
     return res.status(500).json({
       status: "error",
@@ -479,7 +501,23 @@ export async function exportCSV(req: Request, res: Response) {
     min_country_probability,
     sort_by,
     order,
+    format,
   } = req.query;
+  console.log("Request to export...");
+
+  if (!format || typeof format !== "string") {
+    return res.status(400).json({
+      status: "error",
+      message: "Export format required",
+    });
+  }
+
+  if (format.toLowerCase() !== "csv") {
+    return res.status(400).json({
+      status: "error",
+      message: "Invalid export format",
+    });
+  }
 
   const options: AllProfileQueryOptions = {
     limit: 1000, // fetch all — no pagination for export
@@ -488,59 +526,81 @@ export async function exportCSV(req: Request, res: Response) {
 
   if (gender !== undefined) {
     if (!isGender(gender as string)) {
-      return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+      return res
+        .status(422)
+        .json({ status: "error", message: "Invalid query parameters" });
     }
     options.gender = gender as AllProfileQueryOptions["gender"];
   }
 
   if (country_id !== undefined) {
     if (!countryMap.has(country_id as string)) {
-      return res.status(422).json({ status: "error", message: "Invalid country_id" });
+      return res
+        .status(422)
+        .json({ status: "error", message: "Invalid country_id" });
     }
     options.country_id = country_id as string;
   }
 
   if (age_group !== undefined) {
     if (!isAgeGroup(age_group as string)) {
-      return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+      return res
+        .status(422)
+        .json({ status: "error", message: "Invalid query parameters" });
     }
     options.age_group = age_group as AllProfileQueryOptions["age_group"];
   }
 
   if (min_age !== undefined) {
     const parsed = parseInt(min_age as string);
-    if (isNaN(parsed)) return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+    if (isNaN(parsed))
+      return res
+        .status(422)
+        .json({ status: "error", message: "Invalid query parameters" });
     options.min_age = parsed;
   }
 
   if (max_age !== undefined) {
     const parsed = parseInt(max_age as string);
-    if (isNaN(parsed)) return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+    if (isNaN(parsed))
+      return res
+        .status(422)
+        .json({ status: "error", message: "Invalid query parameters" });
     options.max_age = parsed;
   }
 
   if (min_gender_probability !== undefined) {
     const parsed = parseFloat(min_gender_probability as string);
-    if (isNaN(parsed)) return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+    if (isNaN(parsed))
+      return res
+        .status(422)
+        .json({ status: "error", message: "Invalid query parameters" });
     options.min_gender_probability = parsed;
   }
 
   if (min_country_probability !== undefined) {
     const parsed = parseFloat(min_country_probability as string);
-    if (isNaN(parsed)) return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+    if (isNaN(parsed))
+      return res
+        .status(422)
+        .json({ status: "error", message: "Invalid query parameters" });
     options.min_country_probability = parsed;
   }
 
   if (sort_by !== undefined) {
     if (!isSortField(sort_by as string)) {
-      return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+      return res
+        .status(422)
+        .json({ status: "error", message: "Invalid query parameters" });
     }
     options.sort_by = sort_by as AllProfileQueryOptions["sort_by"];
   }
 
   if (order !== undefined) {
     if (!isSortOrder(order as string)) {
-      return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+      return res
+        .status(422)
+        .json({ status: "error", message: "Invalid query parameters" });
     }
     options.sort_order = order as AllProfileQueryOptions["sort_order"];
   }
@@ -551,13 +611,24 @@ export async function exportCSV(req: Request, res: Response) {
     const { stringify } = await import("csv-stringify");
 
     const columns = [
-      "id", "name", "gender", "gender_probability",
-      "age", "age_group", "country_id", "country_name",
-      "country_probability", "created_at",
+      "id",
+      "name",
+      "gender",
+      "gender_probability",
+      "age",
+      "age_group",
+      "country_id",
+      "country_name",
+      "country_probability",
+      "created_at",
     ];
 
+    let now = new Date().toISOString();
     res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", "attachment; filename=\"profiles.csv\"");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="profiles_${now}.csv"`,
+    );
 
     const stringifier = stringify({ header: true, columns });
 
@@ -570,6 +641,8 @@ export async function exportCSV(req: Request, res: Response) {
     stringifier.end();
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ status: "error", message: "Internal server error" });
+    return res
+      .status(500)
+      .json({ status: "error", message: "Internal server error" });
   }
 }

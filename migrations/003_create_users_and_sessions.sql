@@ -19,3 +19,8 @@ CREATE TABLE sessions (
 CREATE INDEX idx_sessions_token_hash ON sessions(token_hash);
 
 CREATE INDEX idx_sessions_user_id ON sessions(user_id);
+
+ALTER TABLE users
+    ADD COLUMN avatar_url       VARCHAR,
+    ADD COLUMN is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+    ADD COLUMN last_login_at    TIMESTAMP;
