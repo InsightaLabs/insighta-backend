@@ -3,8 +3,6 @@ name: CI
 on:
   pull_request:
     branches: [master]
-  push:
-    branches: [master]
 
 jobs:
   ci:
@@ -50,6 +48,12 @@ jobs:
           psql postgresql://classification_user:classification_password@localhost:5432/classification_db \
             -f migrations/003_create_users_and_sessions.sql
 
+      - name: Seed database
+        run: pnpm seed
+        env:
+          CLASSIFY_DB_URL: postgresql://classification_user:classification_password@localhost:5432/classification_db
+          NODE_ENV: test
+
       - name: Lint
         run: pnpm format --check
 
@@ -58,8 +62,11 @@ jobs:
         env:
           CLASSIFY_DB_URL: postgresql://classification_user:classification_password@localhost:5432/classification_db
           GITHUB_CLIENT_ID: test_client_id
+          GITHUB_CLI_CLIENT_ID: test_cli_client_id
           GITHUB_SECRET: test_secret
+          GITHUB_CLI_SECRET: test_cli_secret
           GITHUB_CALLBACK_URL: http://localhost:3001/auth/github/callback
+          GITHUB_CLI_CALLBACK_URL: http://127.0.0.1:9876/callback
           JWT_SECRET: test_jwt_secret_for_ci
           JWT_EXPIRY: 3m
           REFRESH_TOKEN_EXPIRY: 5m
