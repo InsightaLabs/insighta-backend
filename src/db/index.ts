@@ -15,22 +15,37 @@ config();
  * PostgreSQL database client for interactions
  */
 export class DatabaseClient {
-  private pool: Pool;
+  private primaryPool: Pool;
+  private replicaPool: Pool;
 
   constructor() {
-    const dbUrl = process.env.CLASSIFY_DB_URL;
+    const primaryDbUrl = process.env.CLASSIFY_DB_URL;
+    const replicaDbUrl = process.env.CLASSIFY_DB_REPLICA_URL ?? primaryDbUrl;
 
-    if (!dbUrl) {
+    if (!replicaDbUrl) {
       throw new Error("CLASSIFY_DB_URL environment variable not set");
     }
 
-    this.pool = new Pool({
-      connectionString: dbUrl,
+    const poolConfig = {
+      // connectionString: dbUrl,
       ssl:
         process.env.NODE_ENV === "production"
           ? { rejectUnauthorized: false }
           : false,
-    });
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000
+    };
+
+    this.primaryPool = new Pool({
+      connectionString: primaryDbUrl,
+      ...poolConfig
+    })
+    this.replicaPool = new Pool({
+      connectionString: replicaDbUrl,
+      ...poolConfig
+    })
+
   }
 
   /**
@@ -64,7 +79,7 @@ export class DatabaseClient {
     `;
 
     try {
-      const result: QueryResult<Classification> = await this.pool.query(query, [
+      const result: QueryResult<Classification> = await this.primaryPool.query(query, [
         record.id,
         record.name,
         record.gender,
@@ -109,7 +124,7 @@ export class DatabaseClient {
         WHERE LOWER(name) = $1
     `;
 
-    const result = await this.pool.query(query, [name.trim().toLowerCase()]);
+    const result = await this.replicaPool.query(query, [name.trim().toLowerCase()]);
 
     if (result.rowCount && result.rowCount > 0) {
       return result.rows[0];
@@ -132,7 +147,7 @@ export class DatabaseClient {
         WHERE id = $1
     `;
 
-    const result = await this.pool.query(query, [id]);
+    const result = await this.replicaPool.query(query, [id]);
 
     if (result.rowCount && result.rowCount > 0) {
       return result.rows[0];
@@ -142,7 +157,8 @@ export class DatabaseClient {
   }
 
   async close(): Promise<void> {
-    this.pool.end();
+    this.primaryPool.end();
+    this.replicaPool.end();
   }
 
   async getAllRecords(options: AllProfileQueryOptions): Promise<{
@@ -232,7 +248,7 @@ export class DatabaseClient {
 
     values.push(limit, offset);
 
-    const result = await this.pool.query(query, values);
+    const result = await this.replicaPool.query(query, values);
     const total =
       result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
 
@@ -253,7 +269,7 @@ export class DatabaseClient {
     `;
 
     try {
-      const result = await this.pool.query(query, [id]);
+      const result = await this.primaryPool.query(query, [id]);
 
       if (result.rowCount === 0) {
         throw new Error(`Record with id "${id}" not found`);
@@ -274,7 +290,7 @@ export class DatabaseClient {
     avatar_url: string | null;
     last_login_at: Date;
   }): Promise<User> {
-    const result = await this.pool.query<User>(
+    const result = await this.primaryPool.query<User>(
       `INSERT INTO users (id, github_id, username, email, avatar_url, last_login_at)
        VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (github_id) DO UPDATE
@@ -301,7 +317,7 @@ export class DatabaseClient {
     token_hash: string;
     expires_at: Date;
   }): Promise<Session> {
-    const result = await this.pool.query<Session>(
+    const result = await this.primaryPool.query<Session>(
       `INSERT INTO sessions (id, user_id, token_hash, expires_at)
        VALUES ($1, $2, $3, $4)
        RETURNING id, user_id, token_hash, expires_at, revoked, created_at`,
@@ -311,7 +327,7 @@ export class DatabaseClient {
   }
 
   async getSessionByTokenHash(tokenHash: string): Promise<Session | null> {
-    const result = await this.pool.query<Session>(
+    const result = await this.primaryPool.query<Session>(
       `SELECT id, user_id, token_hash, expires_at, revoked, created_at
        FROM sessions
        WHERE token_hash = $1`,
@@ -321,14 +337,14 @@ export class DatabaseClient {
   }
 
   async revokeSession(tokenHash: string): Promise<void> {
-    await this.pool.query(
+    await this.primaryPool.query(
       `UPDATE sessions SET revoked = TRUE WHERE token_hash = $1`,
       [tokenHash],
     );
   }
 
   async getUserById(id: string): Promise<User | null> {
-    const result = await this.pool.query<User>(
+    const result = await this.primaryPool.query<User>(
       `SELECT id, github_id, username, email, avatar_url, role, is_active, last_login_at, created_at
        FROM users WHERE id = $1`,
       [id],

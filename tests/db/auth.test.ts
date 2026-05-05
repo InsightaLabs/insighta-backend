@@ -20,7 +20,7 @@ beforeAll(() => {
 
 afterAll(async () => {
   // Clean up test user (cascades to sessions)
-  await (db as any).pool.query(`DELETE FROM users WHERE github_id = $1`, [
+  await (db as any).primaryPool.query(`DELETE FROM users WHERE github_id = $1`, [
     testGithubId,
   ]);
 });
@@ -70,14 +70,14 @@ describe("upsertUser", () => {
     expect(user.email).toBeNull();
 
     // cleanup
-    await (db as any).pool.query(`DELETE FROM users WHERE github_id = $1`, [
+    await (db as any).primaryPool.query(`DELETE FROM users WHERE github_id = $1`, [
       githubId,
     ]);
   });
 
   it("preserves the role field (does not reset to default on update)", async () => {
     // Manually set role to admin
-    await (db as any).pool.query(
+    await (db as any).primaryPool.query(
       `UPDATE users SET role = 'admin' WHERE github_id = $1`,
       [testGithubId],
     );
@@ -92,7 +92,7 @@ describe("upsertUser", () => {
     expect(updated.role).toBe("admin"); // role not overwritten by upsert
 
     // reset back to analyst
-    await (db as any).pool.query(
+    await (db as any).primaryPool.query(
       `UPDATE users SET role = 'analyst' WHERE github_id = $1`,
       [testGithubId],
     );
