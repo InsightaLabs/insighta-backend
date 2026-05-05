@@ -119,7 +119,7 @@ export function handleCSVUpload(req: Request, res: Response) {
         country_name: string;
         country_probability: number;
     }[] = [];
-    const BATCH_SIZE = 1000;
+    const BATCH_SIZE = 5000;
 
     let processStreamFunction: Promise<any>;
 
@@ -153,13 +153,31 @@ export function handleCSVUpload(req: Request, res: Response) {
 
             parser.on('end', async () => {
                 // flush remaining batch here
+                const chunks = [];
+                const CHUNKS_SIZE = 15; // number of chunks to do at once. If you do all, pg fails
                 for (let i = 0; i < batch.length; i += BATCH_SIZE) {
-                    const chunk = batch.slice(i, i + BATCH_SIZE);
-                    const result = await dbClient.batchInsertRecords(chunk)
-                    stats.inserted += result.inserted;
-                    stats.reasons.duplicate_name += result.duplicates;
-                    stats.skipped += result.duplicates;
+                    chunks.push(batch.slice(i, i + BATCH_SIZE));
                 }
+                // const results = await Promise.all(chunks.map(chunk => dbClient.batchInsertRecords(chunk)));
+
+                for (let i = 0; i < chunks.length; i += CHUNKS_SIZE) {
+                    const current_chunk_group = chunks.slice(i, i + CHUNKS_SIZE);
+                    const results = await Promise.all(current_chunk_group.map(grp => dbClient.batchInsertRecords(grp)));
+
+                    for (const result of results) {
+                        stats.inserted += result.inserted;
+                        stats.reasons.duplicate_name += result.duplicates;
+                        stats.skipped += result.duplicates
+                    }
+                }
+
+                // for (let i = 0; i < batch.length; i += BATCH_SIZE) {
+                //     const chunk = batch.slice(i, i + BATCH_SIZE);
+                //     const result = await dbClient.batchInsertRecords(chunk)
+                //     stats.inserted += result.inserted;
+                //     stats.reasons.duplicate_name += result.duplicates;
+                //     stats.skipped += result.duplicates;
+                // }
                 batch.length = 0;
                 resolve();
             })

@@ -13,10 +13,15 @@ const jwtSecret = process.env.JWT_SECRET!;
 const adminId = "8889143d-9063-4994-a622-2b857591b3c4";
 const analystId = "bcdc0edd-4a48-440d-96c7-b54289410c85";
 
+const localAdminId = "4c5357b0-c1e9-4049-85b7-1c8078883fd5";
+const localAnalystId = "5ccb602f-1a8d-4948-8b40-51fd4175ed25"
+
 async function generateToken() {
   // Get the seeded users
-  const admin = await db.getUserById(adminId);
-  const analyst = await db.getUserById(analystId);
+  const isLocal = true;
+
+  const admin = await db.getUserById(isLocal ? localAdminId :adminId);
+  const analyst = await db.getUserById(isLocal ? localAnalystId :analystId);
 
   // Generate long-lived tokens for the grader (use a long expiry)
   const adminToken = jwt.sign({ userId: admin?.id, role: "admin" }, jwtSecret, {
@@ -42,14 +47,14 @@ async function generateToken() {
     .digest("hex");
   await db.createSession({
     id: uuid.v7(),
-    user_id: admin?.id ?? "8889143d-9063-4994-a622-2b857591b3c4",
+    user_id: admin?.id ?? isLocal ? localAdminId: "8889143d-9063-4994-a622-2b857591b3c4",
     token_hash: tokenHash,
     expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
   });
 
   await db.createSession({
     id: uuid.v7(),
-    user_id: analyst?.id ?? "bcdc0edd-4a48-440d-96c7-b54289410c85",
+    user_id: analyst?.id ?? isLocal ? localAnalystId : "bcdc0edd-4a48-440d-96c7-b54289410c85",
     token_hash: analystTokenHash,
     expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
   });
