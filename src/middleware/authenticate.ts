@@ -79,10 +79,14 @@ export async function checkActive(
   }
   const user = await getDbClient().getUserById(req.user.userId);
   if (!user) {
-    return res.status(401).json({ status: "error", message: "Invalid access token" });
+    return res
+      .status(401)
+      .json({ status: "error", message: "Invalid access token" });
   }
   if (!user.is_active) {
-    return res.status(403).json({ status: "error", message: "Deactivated User" });
+    return res
+      .status(403)
+      .json({ status: "error", message: "Deactivated User" });
   }
   next();
 }

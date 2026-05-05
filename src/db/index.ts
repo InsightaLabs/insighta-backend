@@ -34,18 +34,17 @@ export class DatabaseClient {
           : false,
       max: 20,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000
+      connectionTimeoutMillis: 5000,
     };
 
     this.primaryPool = new Pool({
       connectionString: primaryDbUrl,
-      ...poolConfig
-    })
+      ...poolConfig,
+    });
     this.replicaPool = new Pool({
       connectionString: replicaDbUrl,
-      ...poolConfig
-    })
-
+      ...poolConfig,
+    });
   }
 
   /**
@@ -80,17 +79,17 @@ export class DatabaseClient {
     `;
 
     const result = await this.primaryPool.query(query, [
-        record.id,
-        record.name,
-        record.gender,
-        record.gender_probability,
-        // record.sample_size,
-        record.age,
-        record.age_group,
-        record.country_id,
-        record.country_name,
-        record.country_probability,
-      ]);
+      record.id,
+      record.name,
+      record.gender,
+      record.gender_probability,
+      // record.sample_size,
+      record.age,
+      record.age_group,
+      record.country_id,
+      record.country_name,
+      record.country_probability,
+    ]);
 
     const row = result.rows[0];
     const { inserted, ...classification } = row;
@@ -110,7 +109,9 @@ export class DatabaseClient {
         WHERE LOWER(name) = $1
     `;
 
-    const result = await this.replicaPool.query(query, [name.trim().toLowerCase()]);
+    const result = await this.replicaPool.query(query, [
+      name.trim().toLowerCase(),
+    ]);
 
     if (result.rowCount && result.rowCount > 0) {
       return result.rows[0];

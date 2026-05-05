@@ -107,7 +107,7 @@ export async function githubCallback(req: Request, res: Response) {
     if (!raw) {
       return res.status(400).json({
         status: "error",
-        message: "Invalid/expired state"
+        message: "Invalid/expired state",
       });
     }
     // if (!pkceEntry) {

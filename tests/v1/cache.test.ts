@@ -21,14 +21,21 @@ const JWT_SECRET = process.env.JWT_SECRET!;
 
 const profilesRouter = Router();
 profilesRouter.get("/", authenticate, authorize("analyst"), getAllProfiles);
-profilesRouter.get("/search", authenticate, authorize("analyst"), searchForProfiles);
+profilesRouter.get(
+  "/search",
+  authenticate,
+  authorize("analyst"),
+  searchForProfiles,
+);
 
 const app = express();
 app.use(express.json());
 app.use("/api/v1/profiles", profilesRouter);
 
 function analystToken(userId = uuid.v7()) {
-  return jwt.sign({ userId, role: "analyst" }, JWT_SECRET, { expiresIn: "15m" });
+  return jwt.sign({ userId, role: "analyst" }, JWT_SECRET, {
+    expiresIn: "15m",
+  });
 }
 
 // Clean up any cache keys written during tests
@@ -134,7 +141,8 @@ describe("GET /api/v1/profiles/search — caching", () => {
 describe("PKCE state — Redis storage", () => {
   it("GET /auth/github stores state in Redis with pkce: prefix and TTL", async () => {
     // Import the auth app inline to avoid circular issues
-    const { githubRedirect } = await import("../../src/controllers/auth.controller");
+    const { githubRedirect } =
+      await import("../../src/controllers/auth.controller");
     const authApp = express();
     const r = Router();
     r.get("/github", githubRedirect);

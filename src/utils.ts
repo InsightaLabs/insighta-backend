@@ -254,7 +254,7 @@ export function normalizeQueryOptions(options: AllProfileQueryOptions): string {
     "sort_by",
     "sort_order",
     "page",
-    "limit"
+    "limit",
   ];
 
   for (const key of keyOrder) {

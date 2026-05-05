@@ -20,9 +20,10 @@ beforeAll(() => {
 
 afterAll(async () => {
   // Clean up test user (cascades to sessions)
-  await (db as any).primaryPool.query(`DELETE FROM users WHERE github_id = $1`, [
-    testGithubId,
-  ]);
+  await (db as any).primaryPool.query(
+    `DELETE FROM users WHERE github_id = $1`,
+    [testGithubId],
+  );
 });
 
 // ─── upsertUser ────────────────────────────────────────────────────────────
@@ -70,9 +71,10 @@ describe("upsertUser", () => {
     expect(user.email).toBeNull();
 
     // cleanup
-    await (db as any).primaryPool.query(`DELETE FROM users WHERE github_id = $1`, [
-      githubId,
-    ]);
+    await (db as any).primaryPool.query(
+      `DELETE FROM users WHERE github_id = $1`,
+      [githubId],
+    );
   });
 
   it("preserves the role field (does not reset to default on update)", async () => {
