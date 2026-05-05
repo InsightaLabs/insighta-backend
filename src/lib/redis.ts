@@ -9,4 +9,8 @@ if (!redisUrl) {
   throw new Error("REDIS_URL envrionment variable not set");
 }
 
-export const redis = new Redis(redisUrl);
+export const redis = new Redis(redisUrl, {
+  tls: {
+    rejectUnauthorized: false
+  }
+});

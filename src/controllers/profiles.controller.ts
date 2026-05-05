@@ -341,7 +341,12 @@ export async function getAllProfiles(req: Request, res: Response) {
 
   try {
     const cacheKey = `profiles:${normalizeQueryOptions(options)}`;
-    const cached = await redis.get(cacheKey);
+    let cached: string | null = null;
+    try {
+      cached = await redis.get(cacheKey);
+    } catch(err) {
+      console.error("Redis cache read failed, falling back to DB ", err);
+    }
 
     if (cached) {
       const parsed = JSON.parse(cached);
@@ -367,7 +372,12 @@ export async function getAllProfiles(req: Request, res: Response) {
       data: records,
     };
 
-    await redis.set(cacheKey, JSON.stringify(responseBody), "EX", 60);
+    try {
+      await redis.set(cacheKey, JSON.stringify(responseBody), "EX", 60);
+
+    } catch(err) {
+      console.error("Redis cache write failed")
+    }
 
     return res.status(200).json(responseBody);
     // return res.status(200).json({
@@ -412,7 +422,12 @@ export async function searchForProfiles(req: Request, res: Response) {
 
   try {
     const cacheKey = `profiles:${normalizeQueryOptions(options)}`;
-    const cached = await redis.get(cacheKey);
+    let cached: string | null = null;
+    try {
+      cached = await redis.get(cacheKey);
+    } catch (err) {
+      console.error("Redis cache read failed, falling back to DB:", err);
+    }
 
     if (cached) {
       const parsed = JSON.parse(cached);
@@ -438,7 +453,11 @@ export async function searchForProfiles(req: Request, res: Response) {
       data: records,
     };
 
-    await redis.set(cacheKey, JSON.stringify(responseBody), "EX", 60);
+    try {
+      await redis.set(cacheKey, JSON.stringify(responseBody), "EX", 60);
+    } catch (err) {
+      console.error("Redis cache write failed:", err);
+    }
 
     return res.status(200).json(responseBody);
     // return res.status(200).json({

@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import request from "supertest";
 import express from "express";
 import jwt from "jsonwebtoken";
@@ -6,6 +6,47 @@ import * as uuid from "uuid";
 import { config } from "dotenv";
 
 config();
+
+// Mock Redis before any imports that use it
+vi.mock("../../src/lib/redis", () => {
+  const store = new Map<string, { value: string; expiresAt: number | null }>();
+
+  function isExpired(key: string): boolean {
+    const entry = store.get(key);
+    if (!entry) return true;
+    if (entry.expiresAt === null) return false;
+    return Date.now() > entry.expiresAt;
+  }
+
+  const redis = {
+    get: async (key: string) => {
+      if (isExpired(key)) { store.delete(key); return null; }
+      return store.get(key)?.value ?? null;
+    },
+    set: async (key: string, value: string, exFlag?: string, exSeconds?: number) => {
+      const expiresAt = exFlag === "EX" && exSeconds ? Date.now() + exSeconds * 1000 : null;
+      store.set(key, { value, expiresAt });
+      return "OK";
+    },
+    del: async (...keys: string[]) => {
+      let count = 0;
+      for (const key of keys) { if (store.delete(key)) count++; }
+      return count;
+    },
+    keys: async (pattern: string) => {
+      const prefix = pattern.replace(/\*$/, "");
+      return [...store.keys()].filter((k) => k.startsWith(prefix) && !isExpired(k));
+    },
+    ttl: async (key: string) => {
+      const entry = store.get(key);
+      if (!entry || isExpired(key)) return -2;
+      if (entry.expiresAt === null) return -1;
+      return Math.ceil((entry.expiresAt - Date.now()) / 1000);
+    },
+  };
+
+  return { redis };
+});
 
 import { Router } from "express";
 import {
