@@ -42,8 +42,6 @@ jobs:
       - name: Run migrations
         run: |
           psql postgresql://classification_user:classification_password@localhost:5432/classification_db \
-            -f migrations/001_create_classifications_table.sql
-          psql postgresql://classification_user:classification_password@localhost:5432/classification_db \
             -f migrations/002_create_classifications_table.sql
           psql postgresql://classification_user:classification_password@localhost:5432/classification_db \
             -f migrations/003_create_users_and_sessions.sql
