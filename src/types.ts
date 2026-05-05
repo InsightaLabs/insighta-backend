@@ -88,3 +88,27 @@ export type Session = {
   revoked: boolean;
   created_at: Date;
 };
+
+export type RawCSVRow = {
+  name?: string;
+  gender?: string;
+  age?: string;
+  age_group?: string;
+  country_id?: string;
+  country_name?: string;
+  gender_probability?: string;
+  country_probability?: string;
+};
+
+export type InsertRecord = {
+  id: string;
+  name: string;
+  gender: Gender;
+  gender_probability: number;
+  // sample_size: number;
+  age: number;
+  age_group: AgeGroup;
+  country_id: string;
+  country_name: string;
+  country_probability: number;
+}

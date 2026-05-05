@@ -343,4 +343,54 @@ export class DatabaseClient {
     );
     return result.rowCount && result.rowCount > 0 ? result.rows[0] : null;
   }
+
+  async batchInsertRecords(
+    records: {
+      id: string;
+      name: string;
+      gender: "male" | "female";
+      gender_probability: number;
+      // sample_size: number;
+      age: number;
+      age_group: "adult" | "child" | "teenager" | "senior";
+      country_id: string;
+      country_name: string;
+      country_probability: number;
+    }[],
+  ): Promise<{
+    inserted: number;
+    duplicates: number;
+  }> {
+    if (records.length === 0) return { inserted: 0, duplicates: 0 };
+
+    const values: any[] = [];
+    const placeholders = records.map((record, i) => {
+      const base = i * 9;
+      values.push(
+        record.id,
+        record.name,
+        record.gender,
+        record.gender_probability,
+        record.age,
+        record.age_group,
+        record.country_id,
+        record.country_name,
+        record.country_probability,
+      );
+      return `($${base+1}, $${base+2}, $${base+3}, $${base+4}, $${base+5},$${base+6},$${base+7},$${base+8},$${base+9})`
+    });
+
+    const query = `
+      INSERT INTO classifications
+        (id, name, gender, gender_probability, age, age_group, country_id, country_name, country_probability)
+      VALUES ${placeholders.join(",")}
+      ON CONFLICT (name) DO NOTHING
+    `;
+
+    const result = await this.primaryPool.query(query, values);
+    const inserted = result.rowCount ?? 0;
+    const duplicates = records.length - inserted;
+
+    return { inserted, duplicates }
+  }
 }

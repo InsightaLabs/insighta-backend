@@ -17,6 +17,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.24.0",
   "devDependencies": {
+    "@types/busboy": "^1.5.4",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
@@ -30,8 +31,10 @@
     "vitest": "^4.1.5"
   },
   "dependencies": {
+    "busboy": "^1.6.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
+    "csv-parse": "^6.2.1",
     "csv-stringify": "^6.7.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
