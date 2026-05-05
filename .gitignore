@@ -4,3 +4,4 @@ node_modules/
 dist/
 dist/index.js
 dist/index.js
+**/*.csv
