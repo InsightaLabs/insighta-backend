@@ -192,7 +192,10 @@ describe("getAllRecords — pagination", () => {
   });
 
   it("returns empty records for a page beyond the last", async () => {
-    const result = await db.getAllRecords({ page: 9999, limit: 10 });
+    // Get total first, then request a page guaranteed to be beyond it
+    const { total } = await db.getAllRecords({ limit: 1 });
+    const lastPage = Math.ceil(total / 10);
+    const result = await db.getAllRecords({ page: lastPage + 1, limit: 10 });
     expect(result.records).toHaveLength(0);
   });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import request from "supertest";
 import express from "express";
 import jwt from "jsonwebtoken";
@@ -6,6 +6,18 @@ import * as uuid from "uuid";
 import { config } from "dotenv";
 
 config();
+
+vi.mock("../../src/lib/redis", () => {
+  const store = new Map<string, { value: string; expiresAt: number | null }>();
+  const redis = {
+    get: async (key: string) => store.get(key)?.value ?? null,
+    set: async (key: string, value: string) => { store.set(key, { value, expiresAt: null }); return "OK"; },
+    del: async (...keys: string[]) => { keys.forEach(k => store.delete(k)); return keys.length; },
+    keys: async (pattern: string) => { const prefix = pattern.replace(/\*$/, ""); return [...store.keys()].filter(k => k.startsWith(prefix)); },
+    ttl: async () => -1,
+  };
+  return { redis };
+});
 
 import { Router } from "express";
 import { handleCSVUpload } from "../../src/controllers/upload.controller";
