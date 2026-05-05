@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 import * as uuid from "uuid";
 import { DatabaseClient } from "../db";
 import { parseExpiryMs } from "../utils";
+import { redis } from "../lib/redis";
 
 config();
 
@@ -39,10 +40,10 @@ const dbClient = new DatabaseClient();
 
 // Temporary in-memory store for PKCE verifiers and state
 // key: state string, value: { codeVerifier, expiresAt }
-const pkceStore = new Map<
-  string,
-  { codeVerifier: string; expiresAt: number }
->();
+// const pkceStore = new Map<
+//   string,
+//   { codeVerifier: string; expiresAt: number }
+// >();
 
 function generateCodeVerifier(): string {
   return crypto.randomBytes(32).toString("base64url");
@@ -58,10 +59,11 @@ export async function githubRedirect(req: Request, res: Response) {
   const state = crypto.randomBytes(16).toString("hex");
 
   // Store verifier keyed by state — expires in 10 minutes
-  pkceStore.set(state, {
-    codeVerifier,
-    expiresAt: Date.now() + 10 * 60 * 1000,
-  });
+  // pkceStore.set(state, {
+  //   codeVerifier,
+  //   expiresAt: Date.now() + 10 * 60 * 1000,
+  // });
+  await redis.set(`pkce:${state}`, JSON.stringify({ codeVerifier }), "EX", 600);
 
   const params = new URLSearchParams({
     client_id: githubClientId as string,
@@ -100,20 +102,27 @@ export async function githubCallback(req: Request, res: Response) {
         .json({ status: "error", message: "Missing state parameter" });
     }
 
-    const pkceEntry = pkceStore.get(state);
-    if (!pkceEntry) {
-      return res
-        .status(400)
-        .json({ status: "error", message: "Invalid or expired state" });
+    // const pkceEntry = pkceStore.get(state);
+    const raw = await redis.get(`pkce:${state}`);
+    if (!raw) {
+      return res.status(400).json({
+        status: "error",
+        message: "Invalid/expired state"
+      });
     }
-    if (Date.now() > pkceEntry.expiresAt) {
-      pkceStore.delete(state);
-      return res
-        .status(400)
-        .json({ status: "error", message: "State expired, please try again" });
-    }
+    // if (!pkceEntry) {
+    //   return res
+    //     .status(400)
+    //     .json({ status: "error", message: "Invalid or expired state" });
+    // }
+    // if (Date.now() > pkceEntry.expiresAt) {
+    //   pkceStore.delete(state);
+    //   return res
+    //     .status(400)
+    //     .json({ status: "error", message: "State expired, please try again" });
+    // }
 
-    pkceStore.delete(state); // one-time use
+    // pkceStore.delete(state); // one-time use
 
     if (!qCode || typeof qCode !== "string") {
       return res
@@ -122,7 +131,10 @@ export async function githubCallback(req: Request, res: Response) {
     }
 
     code = qCode;
-    codeVerifier = pkceEntry.codeVerifier;
+    // codeVerifier = pkceEntry.codeVerifier;
+    const { codeVerifier: verifier } = JSON.parse(raw);
+    codeVerifier = verifier;
+    await redis.del(`pkce:${state}`); // for one time use
   }
 
   try {
@@ -410,4 +422,4 @@ export async function me(req: Request, res: Response) {
   }
 }
 
-export { pkceStore };
+// export { pkceStore };
