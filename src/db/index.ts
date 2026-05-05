@@ -15,21 +15,35 @@ config();
  * PostgreSQL database client for interactions
  */
 export class DatabaseClient {
-  private pool: Pool;
+  private primaryPool: Pool;
+  private replicaPool: Pool;
 
   constructor() {
-    const dbUrl = process.env.CLASSIFY_DB_URL;
+    const primaryDbUrl = process.env.CLASSIFY_DB_URL;
+    const replicaDbUrl = process.env.CLASSIFY_DB_REPLICA_URL ?? primaryDbUrl;
 
-    if (!dbUrl) {
+    if (!replicaDbUrl) {
       throw new Error("CLASSIFY_DB_URL environment variable not set");
     }
 
-    this.pool = new Pool({
-      connectionString: dbUrl,
+    const poolConfig = {
+      // connectionString: dbUrl,
       ssl:
         process.env.NODE_ENV === "production"
           ? { rejectUnauthorized: false }
           : false,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+    };
+
+    this.primaryPool = new Pool({
+      connectionString: primaryDbUrl,
+      ...poolConfig,
+    });
+    this.replicaPool = new Pool({
+      connectionString: replicaDbUrl,
+      ...poolConfig,
     });
   }
 
@@ -59,45 +73,31 @@ export class DatabaseClient {
             id, name, gender, gender_probability, age, age_group, country_id, country_name, country_probability
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9
-        ) ON CONFLICT (name) DO NOTHING
-        RETURNING id, name, gender, gender_probability, age, age_group, country_id, country_name, country_probability, created_at
+        ) ON CONFLICT (name) DO UPDATE
+            SET id = classifications.id
+        RETURNING *, (xmax = 0) AS inserted
     `;
 
-    try {
-      const result: QueryResult<Classification> = await this.pool.query(query, [
-        record.id,
-        record.name,
-        record.gender,
-        record.gender_probability,
-        // record.sample_size,
-        record.age,
-        record.age_group,
-        record.country_id,
-        record.country_name,
-        record.country_probability,
-      ]);
+    const result = await this.primaryPool.query(query, [
+      record.id,
+      record.name,
+      record.gender,
+      record.gender_probability,
+      // record.sample_size,
+      record.age,
+      record.age_group,
+      record.country_id,
+      record.country_name,
+      record.country_probability,
+    ]);
 
-      if (result.rowCount && result.rowCount > 0) {
-        return {
-          classification: result.rows[0],
-          duplicate: false,
-        };
-      }
+    const row = result.rows[0];
+    const { inserted, ...classification } = row;
 
-      const existing = await this.getRecordByName(record.name);
-      if (!existing) {
-        throw new Error("Unexpected state: name conflict but record not found");
-      }
-      return {
-        classification: existing,
-        duplicate: true,
-      };
-    } catch (error: any) {
-      if (error.code === "23505") {
-        throw new Error("Name already exists");
-      }
-      throw error;
-    }
+    return {
+      classification: classification as Classification,
+      duplicate: !inserted,
+    };
   }
 
   async getRecordByName(name: string): Promise<Classification | null> {
@@ -109,7 +109,9 @@ export class DatabaseClient {
         WHERE LOWER(name) = $1
     `;
 
-    const result = await this.pool.query(query, [name.trim().toLowerCase()]);
+    const result = await this.replicaPool.query(query, [
+      name.trim().toLowerCase(),
+    ]);
 
     if (result.rowCount && result.rowCount > 0) {
       return result.rows[0];
@@ -132,7 +134,7 @@ export class DatabaseClient {
         WHERE id = $1
     `;
 
-    const result = await this.pool.query(query, [id]);
+    const result = await this.replicaPool.query(query, [id]);
 
     if (result.rowCount && result.rowCount > 0) {
       return result.rows[0];
@@ -142,7 +144,8 @@ export class DatabaseClient {
   }
 
   async close(): Promise<void> {
-    this.pool.end();
+    this.primaryPool.end();
+    this.replicaPool.end();
   }
 
   async getAllRecords(options: AllProfileQueryOptions): Promise<{
@@ -178,8 +181,8 @@ export class DatabaseClient {
     }
 
     if (options.country_id) {
-      conditions.push(`LOWER(country_id) = $${paramIndex}`);
-      values.push(options.country_id.toLowerCase());
+      conditions.push(`country_id = $${paramIndex}`);
+      values.push(options.country_id.toUpperCase());
       paramIndex++;
     }
 
@@ -217,26 +220,31 @@ export class DatabaseClient {
     const sortClause =
       sortBy && sortOrder ? ` ORDER BY ${sortBy} ${sortOrder} ` : ``;
 
+    const countQuery = `SELECT COUNT(*) FROM classifications ${whereClause}`;
+
     const query = `
       SELECT 
         id, name, gender, gender_probability, age, age_group, 
-        country_id, country_name, country_probability, created_at,
-        COUNT(*) OVER() AS total_count
+        country_id, country_name, country_probability, created_at
       FROM classifications
       ${whereClause}
       ${sortClause}
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
 
-    // const total = parseInt(totalResult.rows[0].count);
+    // filterValues: only WHERE clause params — passed to both queries
+    // dataValues: filter params + limit + offset — passed only to the data query
+    const filterValues = [...values];
+    const dataValues = [...values, limit, offset];
 
-    values.push(limit, offset);
+    const [result, countResult] = await Promise.all([
+      this.replicaPool.query(query, dataValues),
+      this.replicaPool.query(countQuery, filterValues),
+    ]);
 
-    const result = await this.pool.query(query, values);
-    const total =
-      result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
+    const total = parseInt(countResult.rows[0].count);
 
-    const data = result.rows.map(({ total_count, ...row }) => row);
+    const data = result.rows.map(({ ...row }) => row);
     return {
       records: data,
       // count: result.rowCount ?? 0,
@@ -253,7 +261,7 @@ export class DatabaseClient {
     `;
 
     try {
-      const result = await this.pool.query(query, [id]);
+      const result = await this.primaryPool.query(query, [id]);
 
       if (result.rowCount === 0) {
         throw new Error(`Record with id "${id}" not found`);
@@ -274,7 +282,7 @@ export class DatabaseClient {
     avatar_url: string | null;
     last_login_at: Date;
   }): Promise<User> {
-    const result = await this.pool.query<User>(
+    const result = await this.primaryPool.query<User>(
       `INSERT INTO users (id, github_id, username, email, avatar_url, last_login_at)
        VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (github_id) DO UPDATE
@@ -301,7 +309,7 @@ export class DatabaseClient {
     token_hash: string;
     expires_at: Date;
   }): Promise<Session> {
-    const result = await this.pool.query<Session>(
+    const result = await this.primaryPool.query<Session>(
       `INSERT INTO sessions (id, user_id, token_hash, expires_at)
        VALUES ($1, $2, $3, $4)
        RETURNING id, user_id, token_hash, expires_at, revoked, created_at`,
@@ -311,7 +319,7 @@ export class DatabaseClient {
   }
 
   async getSessionByTokenHash(tokenHash: string): Promise<Session | null> {
-    const result = await this.pool.query<Session>(
+    const result = await this.primaryPool.query<Session>(
       `SELECT id, user_id, token_hash, expires_at, revoked, created_at
        FROM sessions
        WHERE token_hash = $1`,
@@ -321,18 +329,68 @@ export class DatabaseClient {
   }
 
   async revokeSession(tokenHash: string): Promise<void> {
-    await this.pool.query(
+    await this.primaryPool.query(
       `UPDATE sessions SET revoked = TRUE WHERE token_hash = $1`,
       [tokenHash],
     );
   }
 
   async getUserById(id: string): Promise<User | null> {
-    const result = await this.pool.query<User>(
+    const result = await this.primaryPool.query<User>(
       `SELECT id, github_id, username, email, avatar_url, role, is_active, last_login_at, created_at
        FROM users WHERE id = $1`,
       [id],
     );
     return result.rowCount && result.rowCount > 0 ? result.rows[0] : null;
+  }
+
+  async batchInsertRecords(
+    records: {
+      id: string;
+      name: string;
+      gender: "male" | "female";
+      gender_probability: number;
+      // sample_size: number;
+      age: number;
+      age_group: "adult" | "child" | "teenager" | "senior";
+      country_id: string;
+      country_name: string;
+      country_probability: number;
+    }[],
+  ): Promise<{
+    inserted: number;
+    duplicates: number;
+  }> {
+    if (records.length === 0) return { inserted: 0, duplicates: 0 };
+
+    const values: any[] = [];
+    const placeholders = records.map((record, i) => {
+      const base = i * 9;
+      values.push(
+        record.id,
+        record.name,
+        record.gender,
+        record.gender_probability,
+        record.age,
+        record.age_group,
+        record.country_id,
+        record.country_name,
+        record.country_probability,
+      );
+      return `($${base+1}, $${base+2}, $${base+3}, $${base+4}, $${base+5},$${base+6},$${base+7},$${base+8},$${base+9})`
+    });
+
+    const query = `
+      INSERT INTO classifications
+        (id, name, gender, gender_probability, age, age_group, country_id, country_name, country_probability)
+      VALUES ${placeholders.join(",")}
+      ON CONFLICT (name) DO NOTHING
+    `;
+
+    const result = await this.primaryPool.query(query, values);
+    const inserted = result.rowCount ?? 0;
+    const duplicates = records.length - inserted;
+
+    return { inserted, duplicates }
   }
 }

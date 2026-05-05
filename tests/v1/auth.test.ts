@@ -15,10 +15,10 @@ import {
   logout,
   me,
   githubRedirect,
-  pkceStore,
 } from "../../src/controllers/auth.controller";
 import { authenticate, checkActive } from "../../src/middleware/authenticate";
 import { DatabaseClient } from "../../src/db";
+import { redis } from "../../src/lib/redis";
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
@@ -52,7 +52,7 @@ async function createTestUser(role: "analyst" | "admin" = "analyst") {
     last_login_at: new Date(),
   });
   if (role === "admin") {
-    await (db as any).pool.query(
+    await (db as any).primaryPool.query(
       `UPDATE users SET role = 'admin' WHERE id = $1`,
       [user.id],
     );
@@ -78,7 +78,9 @@ const createdUserIds: string[] = [];
 
 afterAll(async () => {
   for (const id of createdUserIds) {
-    await (db as any).pool.query(`DELETE FROM users WHERE id = $1`, [id]);
+    await (db as any).primaryPool.query(`DELETE FROM users WHERE id = $1`, [
+      id,
+    ]);
   }
 });
 
@@ -100,10 +102,17 @@ describe("GET /api/v1/auth/github", () => {
     expect(location).toContain("code_challenge_method=S256");
   });
 
-  it("stores state in pkceStore", async () => {
-    const sizeBefore = pkceStore.size;
-    await request(app).get("/api/v1/auth/github");
-    expect(pkceStore.size).toBe(sizeBefore + 1);
+  it("stores state in Redis with pkce: prefix", async () => {
+    const res = await request(app).get("/api/v1/auth/github");
+    const location = res.headers.location as string;
+    const url = new URL(location);
+    const state = url.searchParams.get("state")!;
+    const stored = await redis.get(`pkce:${state}`);
+    expect(stored).not.toBeNull();
+    const parsed = JSON.parse(stored!);
+    expect(parsed.codeVerifier).toBeDefined();
+    // cleanup
+    await redis.del(`pkce:${state}`);
   });
 });
 
@@ -118,54 +127,47 @@ describe("GET /api/v1/auth/github/callback", () => {
     expect(res.body.message).toContain("state");
   });
 
-  it("returns 400 when state is invalid (not in pkceStore)", async () => {
+  it("returns 400 when state is invalid (not in Redis)", async () => {
     const res = await request(app)
       .get("/api/v1/auth/github/callback")
       .query({ code: "somecode", state: "invalidstate" });
     expect(res.status).toBe(400);
-    expect(res.body.message).toContain("Invalid or expired state");
-  });
-
-  it("returns 400 when state is expired", async () => {
-    const expiredState = "expiredstate123";
-    pkceStore.set(expiredState, {
-      codeVerifier: "verifier",
-      expiresAt: Date.now() - 1000,
-    });
-
-    const res = await request(app)
-      .get("/api/v1/auth/github/callback")
-      .query({ code: "somecode", state: expiredState });
-    expect(res.status).toBe(400);
-    expect(res.body.message).toContain("expired");
+    expect(res.body.message).toContain("Invalid");
   });
 
   it("returns 400 when code is missing but state is valid", async () => {
     const state = "validstate123";
-    pkceStore.set(state, {
-      codeVerifier: "verifier",
-      expiresAt: Date.now() + 60_000,
-    });
+    await redis.set(
+      `pkce:${state}`,
+      JSON.stringify({ codeVerifier: "verifier" }),
+      "EX",
+      600,
+    );
 
     const res = await request(app)
       .get("/api/v1/auth/github/callback")
       .query({ state });
     expect(res.status).toBe(400);
     expect(res.body.message).toContain("authorization code");
+
+    await redis.del(`pkce:${state}`);
   });
 
-  it("consumes state from pkceStore (one-time use)", async () => {
+  it("consumes state from Redis (one-time use)", async () => {
     const state = "onetimestate";
-    pkceStore.set(state, {
-      codeVerifier: "verifier",
-      expiresAt: Date.now() + 60_000,
-    });
+    await redis.set(
+      `pkce:${state}`,
+      JSON.stringify({ codeVerifier: "verifier" }),
+      "EX",
+      600,
+    );
 
     await request(app)
       .get("/api/v1/auth/github/callback")
       .query({ code: "fakecode", state });
 
-    expect(pkceStore.has(state)).toBe(false);
+    const remaining = await redis.get(`pkce:${state}`);
+    expect(remaining).toBeNull();
   });
 });
 
@@ -406,10 +408,12 @@ describe("GET /api/v1/auth/me", () => {
 describe("GET /api/v1/auth/github/callback — success path", () => {
   it("CLI path: returns access_token and refresh_token as JSON", async () => {
     const state = `success_state_${Date.now()}`;
-    pkceStore.set(state, {
-      codeVerifier: "test-verifier",
-      expiresAt: Date.now() + 60_000,
-    });
+    await redis.set(
+      `pkce:${state}`,
+      JSON.stringify({ codeVerifier: "test-verifier" }),
+      "EX",
+      600,
+    );
 
     const githubUserId = Math.floor(Math.random() * 1_000_000);
 
@@ -442,17 +446,20 @@ describe("GET /api/v1/auth/github/callback — success path", () => {
     expect(res.body.expires_in).toBe(180); // JWT_EXPIRY=3m = 180s
 
     const db2 = new DatabaseClient();
-    await (db2 as any).pool.query(`DELETE FROM users WHERE github_id = $1`, [
-      String(githubUserId),
-    ]);
+    await (db2 as any).primaryPool.query(
+      `DELETE FROM users WHERE github_id = $1`,
+      [String(githubUserId)],
+    );
   });
 
   it("CLI path: access token contains correct userId and role", async () => {
     const state = `success_state_role_${Date.now()}`;
-    pkceStore.set(state, {
-      codeVerifier: "test-verifier",
-      expiresAt: Date.now() + 60_000,
-    });
+    await redis.set(
+      `pkce:${state}`,
+      JSON.stringify({ codeVerifier: "test-verifier" }),
+      "EX",
+      600,
+    );
 
     const githubUserId = Math.floor(Math.random() * 1_000_000) + 2_000_000;
 
@@ -482,17 +489,20 @@ describe("GET /api/v1/auth/github/callback — success path", () => {
     expect(decoded.role).toBe("analyst");
 
     const db2 = new DatabaseClient();
-    await (db2 as any).pool.query(`DELETE FROM users WHERE github_id = $1`, [
-      String(githubUserId),
-    ]);
+    await (db2 as any).primaryPool.query(
+      `DELETE FROM users WHERE github_id = $1`,
+      [String(githubUserId)],
+    );
   });
 
   it("returns 502 when GitHub token exchange fails", async () => {
     const state = `fail_state_${Date.now()}`;
-    pkceStore.set(state, {
-      codeVerifier: "test-verifier",
-      expiresAt: Date.now() + 60_000,
-    });
+    await redis.set(
+      `pkce:${state}`,
+      JSON.stringify({ codeVerifier: "test-verifier" }),
+      "EX",
+      600,
+    );
 
     const originalFetch = global.fetch;
     global.fetch = vi.fn().mockResolvedValueOnce({
@@ -511,10 +521,12 @@ describe("GET /api/v1/auth/github/callback — success path", () => {
 
   it("returns 502 when GitHub user fetch fails (no id)", async () => {
     const state = `fail_user_state_${Date.now()}`;
-    pkceStore.set(state, {
-      codeVerifier: "test-verifier",
-      expiresAt: Date.now() + 60_000,
-    });
+    await redis.set(
+      `pkce:${state}`,
+      JSON.stringify({ codeVerifier: "test-verifier" }),
+      "EX",
+      600,
+    );
 
     const originalFetch = global.fetch;
     global.fetch = vi
@@ -538,10 +550,12 @@ describe("GET /api/v1/auth/github/callback — success path", () => {
 
   it("browser path: redirects to portal callback with tokens in query params", async () => {
     const state = `browser_state_${Date.now()}`;
-    pkceStore.set(state, {
-      codeVerifier: "test-verifier",
-      expiresAt: Date.now() + 60_000,
-    });
+    await redis.set(
+      `pkce:${state}`,
+      JSON.stringify({ codeVerifier: "test-verifier" }),
+      "EX",
+      600,
+    );
 
     const githubUserId = Math.floor(Math.random() * 1_000_000) + 4_000_000;
 
@@ -565,7 +579,6 @@ describe("GET /api/v1/auth/github/callback — success path", () => {
 
     global.fetch = originalFetch;
 
-    // Browser path redirects to portal callback with tokens as query params
     expect(res.status).toBe(302);
     expect(res.headers.location).toContain("/api/auth/callback");
     expect(res.headers.location).toContain("access_token=");
@@ -573,9 +586,10 @@ describe("GET /api/v1/auth/github/callback — success path", () => {
     expect(res.headers.location).toContain("csrf_token=");
 
     const db2 = new DatabaseClient();
-    await (db2 as any).pool.query(`DELETE FROM users WHERE github_id = $1`, [
-      String(githubUserId),
-    ]);
+    await (db2 as any).primaryPool.query(
+      `DELETE FROM users WHERE github_id = $1`,
+      [String(githubUserId)],
+    );
   });
 });
 
@@ -619,7 +633,9 @@ describe("POST /api/v1/auth/refresh — user deleted mid-session", () => {
     });
 
     const rawToken2 = await createTestSession(user.id);
-    await (db as any).pool.query(`DELETE FROM users WHERE id = $1`, [user.id]);
+    await (db as any).primaryPool.query(`DELETE FROM users WHERE id = $1`, [
+      user.id,
+    ]);
 
     const res = await request(app)
       .post("/api/v1/auth/refresh")

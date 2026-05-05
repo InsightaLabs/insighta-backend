@@ -7,14 +7,16 @@ import {
   getProfile,
   searchForProfiles,
 } from "../../controllers/profiles.controller";
-import { authenticate } from "../../middleware/authenticate";
 import { authorize } from "../../middleware/authorize";
+import { handleCSVUpload } from "../../controllers/upload.controller";
 
 const router = Router();
 
 router.post("/", authorize("admin"), createProfile);
 
 router.get("/", authorize("analyst"), getAllProfiles);
+
+router.post("/upload", authorize("admin"), handleCSVUpload);
 
 router.get("/search", authorize("analyst"), searchForProfiles);
 

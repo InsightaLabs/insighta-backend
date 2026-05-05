@@ -239,3 +239,29 @@ export function parseExpiryMs(expiry: string): number {
       throw new Error(`Unknown expiry unit: ${unit}`);
   }
 }
+
+export function normalizeQueryOptions(options: AllProfileQueryOptions): string {
+  const normalized: Record<string, unknown> = {};
+
+  const keyOrder: (keyof AllProfileQueryOptions)[] = [
+    "gender",
+    "age_group",
+    "country_id",
+    "min_age",
+    "max_age",
+    "min_gender_probability",
+    "min_country_probability",
+    "sort_by",
+    "sort_order",
+    "page",
+    "limit",
+  ];
+
+  for (const key of keyOrder) {
+    if (options[key] !== undefined) {
+      normalized[key] = options[key];
+    }
+  }
+
+  return JSON.stringify(normalized);
+}

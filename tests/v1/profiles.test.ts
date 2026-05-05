@@ -442,7 +442,7 @@ describe("DELETE /api/v1/profiles/:id — success", () => {
   it("admin can delete an existing profile and gets 204", async () => {
     const db2 = new DatabaseClient();
     const testId = uuid.v7();
-    await (db2 as any).pool.query(
+    await (db2 as any).primaryPool.query(
       `INSERT INTO classifications (id, name, gender, gender_probability, age, age_group, country_id, country_name, country_probability)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [

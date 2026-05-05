@@ -15,7 +15,9 @@ import {
   isGender,
   isSortField,
   isSortOrder,
+  normalizeQueryOptions,
 } from "../utils";
+import { redis } from "../lib/redis";
 
 const dbClient = new DatabaseClient();
 
@@ -38,11 +40,16 @@ export async function createProfile(req: Request, res: Response) {
   }
 
   try {
-    const genderizeRes = await fetch(`https://api.genderize.io?name=${name}`);
-    const nationalizeRes = await fetch(
-      `https://api.nationalize.io/?name=${name}`,
-    );
-    const agifyRes = await fetch(`https://api.agify.io/?name=${name}`);
+    const [genderizeRes, nationalizeRes, agifyRes] = await Promise.all([
+      fetch(`https://api.genderize.io?name=${name}`),
+      fetch(`https://api.nationalize.io/?name=${name}`),
+      fetch(`https://api.agify.io/?name=${name}`),
+    ]);
+    // const genderizeRes = await fetch(`https://api.genderize.io?name=${name}`);
+    // const nationalizeRes = await fetch(
+    //   `https://api.nationalize.io/?name=${name}`,
+    // );
+    // const agifyRes = await fetch(`https://api.agify.io/?name=${name}`);
 
     if (!genderizeRes.ok) {
       return res.status(502).json({
@@ -65,11 +72,22 @@ export async function createProfile(req: Request, res: Response) {
       });
     }
 
-    const {
-      count: sample_size,
-      probability: gender_probability,
-      gender,
-    }: GenderizeAPIResponse = await genderizeRes.json();
+    const [
+      { count: sample_size, probability: gender_probability, gender },
+      { country },
+      { age },
+    ]: [GenderizeAPIResponse, NationalizeAPIResponse, AgifyAPIResponse] =
+      await Promise.all([
+        genderizeRes.json(),
+        nationalizeRes.json(),
+        agifyRes.json(),
+      ]);
+
+    // const {
+    //   count: sample_size,
+    //   probability: gender_probability,
+    //   gender,
+    // }: GenderizeAPIResponse = await genderizeRes.json();
 
     if (gender === null || sample_size === 0) {
       return res.status(502).json({
@@ -78,7 +96,7 @@ export async function createProfile(req: Request, res: Response) {
       });
     }
 
-    const { age }: AgifyAPIResponse = await agifyRes.json();
+    // const { age }: AgifyAPIResponse = await agifyRes.json();
 
     if (age === null || age < 0) {
       return res.status(502).json({
@@ -87,7 +105,7 @@ export async function createProfile(req: Request, res: Response) {
       });
     }
 
-    const { country }: NationalizeAPIResponse = await nationalizeRes.json();
+    // const { country }: NationalizeAPIResponse = await nationalizeRes.json();
 
     const age_group: AgeGroup =
       age <= 12
@@ -322,10 +340,19 @@ export async function getAllProfiles(req: Request, res: Response) {
   }
 
   try {
+    const cacheKey = `profiles:${normalizeQueryOptions(options)}`;
+    const cached = await redis.get(cacheKey);
+
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      return res.status(200).json(parsed);
+    }
+
     const { page, limit, total, records } =
       await dbClient.getAllRecords(options);
     const totalPages = Math.ceil(total / limit);
-    return res.status(200).json({
+
+    const responseBody = {
       status: "success",
       page,
       limit,
@@ -338,7 +365,11 @@ export async function getAllProfiles(req: Request, res: Response) {
           page > 1 ? `${baseUrl}/${path}?page=${page}&limit=${limit}` : null,
       },
       data: records,
-    });
+    };
+
+    await redis.set(cacheKey, JSON.stringify(responseBody), "EX", 60);
+
+    return res.status(200).json(responseBody);
     // return res.status(200).json({
     //   status: "success",
     //   data: records,
@@ -380,10 +411,19 @@ export async function searchForProfiles(req: Request, res: Response) {
   }
 
   try {
+    const cacheKey = `profiles:${normalizeQueryOptions(options)}`;
+    const cached = await redis.get(cacheKey);
+
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      return res.status(200).json(parsed);
+    }
+
     const { page, limit, total, records } =
       await dbClient.getAllRecords(options);
     const totalPages = Math.ceil(total / limit);
-    return res.status(200).json({
+
+    const responseBody = {
       status: "success",
       page,
       limit,
@@ -396,7 +436,11 @@ export async function searchForProfiles(req: Request, res: Response) {
           page > 1 ? `${baseUrl}/${path}?page=${page}&limit=${limit}` : null,
       },
       data: records,
-    });
+    };
+
+    await redis.set(cacheKey, JSON.stringify(responseBody), "EX", 60);
+
+    return res.status(200).json(responseBody);
     // return res.status(200).json({
     //   status: "success",
     //   data: records,

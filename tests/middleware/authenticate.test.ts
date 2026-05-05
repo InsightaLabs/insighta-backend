@@ -23,7 +23,7 @@ vi.mock("../../src/db", () => {
 function makeReq(authHeader?: string): Partial<Request> {
   return {
     headers: authHeader
-      ? { authorization: authHeader, 'x-client-type': 'cli' }
+      ? { authorization: authHeader, "x-client-type": "cli" }
       : {},
     cookies: {},
   } as Partial<Request>;

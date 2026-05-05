@@ -23,6 +23,15 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout
@@ -42,8 +51,6 @@ jobs:
       - name: Run migrations
         run: |
           psql postgresql://classification_user:classification_password@localhost:5432/classification_db \
-            -f migrations/001_create_classifications_table.sql
-          psql postgresql://classification_user:classification_password@localhost:5432/classification_db \
             -f migrations/002_create_classifications_table.sql
           psql postgresql://classification_user:classification_password@localhost:5432/classification_db \
             -f migrations/003_create_users_and_sessions.sql
@@ -53,6 +60,7 @@ jobs:
         env:
           CLASSIFY_DB_URL: postgresql://classification_user:classification_password@localhost:5432/classification_db
           NODE_ENV: test
+          REDIS_URL: redis://localhost:6379
 
       - name: Lint
         run: pnpm format --check
@@ -61,6 +69,7 @@ jobs:
         run: pnpm test
         env:
           CLASSIFY_DB_URL: postgresql://classification_user:classification_password@localhost:5432/classification_db
+          REDIS_URL: redis://localhost:6379
           GITHUB_CLIENT_ID: test_client_id
           GITHUB_CLI_CLIENT_ID: test_cli_client_id
           GITHUB_SECRET: test_secret
