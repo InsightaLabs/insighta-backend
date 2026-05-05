@@ -74,12 +74,12 @@ export class DatabaseClient {
             id, name, gender, gender_probability, age, age_group, country_id, country_name, country_probability
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9
-        ) ON CONFLICT (name) DO NOTHING
-        RETURNING id, name, gender, gender_probability, age, age_group, country_id, country_name, country_probability, created_at
+        ) ON CONFLICT (name) DO UPDATE
+            SET id = classifications.id
+        RETURNING *, (xmax = 0) AS inserted
     `;
 
-    try {
-      const result: QueryResult<Classification> = await this.primaryPool.query(query, [
+    const result = await this.primaryPool.query(query, [
         record.id,
         record.name,
         record.gender,
@@ -92,27 +92,13 @@ export class DatabaseClient {
         record.country_probability,
       ]);
 
-      if (result.rowCount && result.rowCount > 0) {
-        return {
-          classification: result.rows[0],
-          duplicate: false,
-        };
-      }
+    const row = result.rows[0];
+    const { inserted, ...classification } = row;
 
-      const existing = await this.getRecordByName(record.name);
-      if (!existing) {
-        throw new Error("Unexpected state: name conflict but record not found");
-      }
-      return {
-        classification: existing,
-        duplicate: true,
-      };
-    } catch (error: any) {
-      if (error.code === "23505") {
-        throw new Error("Name already exists");
-      }
-      throw error;
-    }
+    return {
+      classification: classification as Classification,
+      duplicate: !inserted,
+    };
   }
 
   async getRecordByName(name: string): Promise<Classification | null> {
@@ -194,8 +180,8 @@ export class DatabaseClient {
     }
 
     if (options.country_id) {
-      conditions.push(`LOWER(country_id) = $${paramIndex}`);
-      values.push(options.country_id.toLowerCase());
+      conditions.push(`country_id = $${paramIndex}`);
+      values.push(options.country_id.toUpperCase());
       paramIndex++;
     }
 
@@ -233,26 +219,31 @@ export class DatabaseClient {
     const sortClause =
       sortBy && sortOrder ? ` ORDER BY ${sortBy} ${sortOrder} ` : ``;
 
+    const countQuery = `SELECT COUNT(*) FROM classifications ${whereClause}`;
+
     const query = `
       SELECT 
         id, name, gender, gender_probability, age, age_group, 
-        country_id, country_name, country_probability, created_at,
-        COUNT(*) OVER() AS total_count
+        country_id, country_name, country_probability, created_at
       FROM classifications
       ${whereClause}
       ${sortClause}
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
 
-    // const total = parseInt(totalResult.rows[0].count);
+    // filterValues: only WHERE clause params — passed to both queries
+    // dataValues: filter params + limit + offset — passed only to the data query
+    const filterValues = [...values];
+    const dataValues = [...values, limit, offset];
 
-    values.push(limit, offset);
+    const [result, countResult] = await Promise.all([
+      this.replicaPool.query(query, dataValues),
+      this.replicaPool.query(countQuery, filterValues),
+    ]);
 
-    const result = await this.replicaPool.query(query, values);
-    const total =
-      result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
+    const total = parseInt(countResult.rows[0].count);
 
-    const data = result.rows.map(({ total_count, ...row }) => row);
+    const data = result.rows.map(({ ...row }) => row);
     return {
       records: data,
       // count: result.rowCount ?? 0,
