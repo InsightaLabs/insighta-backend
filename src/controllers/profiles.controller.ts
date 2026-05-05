@@ -15,7 +15,9 @@ import {
   isGender,
   isSortField,
   isSortOrder,
+  normalizeQueryOptions
 } from "../utils";
+import { redis } from "../lib/redis";
 
 const dbClient = new DatabaseClient();
 
@@ -322,10 +324,19 @@ export async function getAllProfiles(req: Request, res: Response) {
   }
 
   try {
+    const cacheKey = `profiles:${normalizeQueryOptions(options)}`;
+    const cached = await redis.get(cacheKey);
+
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      return res.status(200).json(parsed);
+    }
+
     const { page, limit, total, records } =
       await dbClient.getAllRecords(options);
     const totalPages = Math.ceil(total / limit);
-    return res.status(200).json({
+
+    const responseBody = {
       status: "success",
       page,
       limit,
@@ -338,7 +349,11 @@ export async function getAllProfiles(req: Request, res: Response) {
           page > 1 ? `${baseUrl}/${path}?page=${page}&limit=${limit}` : null,
       },
       data: records,
-    });
+    }
+
+    await redis.set(cacheKey, JSON.stringify(responseBody), "EX", 60);
+
+    return res.status(200).json(responseBody);
     // return res.status(200).json({
     //   status: "success",
     //   data: records,
@@ -380,10 +395,19 @@ export async function searchForProfiles(req: Request, res: Response) {
   }
 
   try {
+    const cacheKey = `profiles:${normalizeQueryOptions(options)}`;
+    const cached = await redis.get(cacheKey);
+
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      return res.status(200).json(parsed);
+    }
+
     const { page, limit, total, records } =
       await dbClient.getAllRecords(options);
     const totalPages = Math.ceil(total / limit);
-    return res.status(200).json({
+
+    const responseBody = {
       status: "success",
       page,
       limit,
@@ -396,7 +420,11 @@ export async function searchForProfiles(req: Request, res: Response) {
           page > 1 ? `${baseUrl}/${path}?page=${page}&limit=${limit}` : null,
       },
       data: records,
-    });
+    }
+
+    await redis.set(cacheKey, JSON.stringify(responseBody), "EX", 60);
+
+    return res.status(200).json(responseBody);
     // return res.status(200).json({
     //   status: "success",
     //   data: records,
