@@ -52,7 +52,7 @@ async function createTestUser(role: "analyst" | "admin" = "analyst") {
     last_login_at: new Date(),
   });
   if (role === "admin") {
-    await (db as any).pool.query(
+    await (db as any).primaryPool.query(
       `UPDATE users SET role = 'admin' WHERE id = $1`,
       [user.id],
     );
@@ -78,7 +78,7 @@ const createdUserIds: string[] = [];
 
 afterAll(async () => {
   for (const id of createdUserIds) {
-    await (db as any).pool.query(`DELETE FROM users WHERE id = $1`, [id]);
+    await (db as any).primaryPool.query(`DELETE FROM users WHERE id = $1`, [id]);
   }
 });
 
@@ -442,7 +442,7 @@ describe("GET /api/v1/auth/github/callback — success path", () => {
     expect(res.body.expires_in).toBe(180); // JWT_EXPIRY=3m = 180s
 
     const db2 = new DatabaseClient();
-    await (db2 as any).pool.query(`DELETE FROM users WHERE github_id = $1`, [
+    await (db2 as any).primaryPool.query(`DELETE FROM users WHERE github_id = $1`, [
       String(githubUserId),
     ]);
   });
@@ -482,7 +482,7 @@ describe("GET /api/v1/auth/github/callback — success path", () => {
     expect(decoded.role).toBe("analyst");
 
     const db2 = new DatabaseClient();
-    await (db2 as any).pool.query(`DELETE FROM users WHERE github_id = $1`, [
+    await (db2 as any).primaryPool.query(`DELETE FROM users WHERE github_id = $1`, [
       String(githubUserId),
     ]);
   });
@@ -573,7 +573,7 @@ describe("GET /api/v1/auth/github/callback — success path", () => {
     expect(res.headers.location).toContain("csrf_token=");
 
     const db2 = new DatabaseClient();
-    await (db2 as any).pool.query(`DELETE FROM users WHERE github_id = $1`, [
+    await (db2 as any).primaryPool.query(`DELETE FROM users WHERE github_id = $1`, [
       String(githubUserId),
     ]);
   });
@@ -619,7 +619,7 @@ describe("POST /api/v1/auth/refresh — user deleted mid-session", () => {
     });
 
     const rawToken2 = await createTestSession(user.id);
-    await (db as any).pool.query(`DELETE FROM users WHERE id = $1`, [user.id]);
+    await (db as any).primaryPool.query(`DELETE FROM users WHERE id = $1`, [user.id]);
 
     const res = await request(app)
       .post("/api/v1/auth/refresh")
