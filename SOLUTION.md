@@ -12,7 +12,7 @@ This document covers the three areas of improvement implemented in Stage 4B: que
 
 **Database indexes**
 
-Added indexes on all columns used in `WHERE` clauses and `ORDER BY` clauses on the `classifications` table:
+Added indexes on all columns used in WHERE clauses and ORDER BY clauses on the `classifications` table:
 
 - `gender` — equality filter
 - `age_group` — equality filter
@@ -25,6 +25,30 @@ Added indexes on all columns used in `WHERE` clauses and `ORDER BY` clauses on t
 
 Without indexes, every query on a table of millions of rows performs a full sequential scan. With indexes, the database jumps directly to matching rows.
 
+**Index verification with EXPLAIN ANALYZE**
+
+Before adding indexes, a filtered aggregate query on the `classifications` table (502,030 rows) used a parallel sequential scan:
+
+```
+Parallel Seq Scan on classifications
+  Filter: ((gender)::text = 'male'::text)
+  Rows Removed by Filter: 83556
+Planning Time: 42.836 ms
+Execution Time: 402.192 ms
+```
+
+After adding `classifications_gender_idx`, PostgreSQL switches to a parallel index-only scan:
+
+```
+Parallel Index Only Scan using classifications_gender_idx on classifications
+  Index Cond: (gender = 'male'::text)
+  Heap Fetches: 29
+Planning Time: 0.171 ms
+Execution Time: 339.266 ms
+```
+
+The index is confirmed in use. The improvement on a single low-cardinality column (`gender` has only two values, ~50% selectivity) is 402ms to 339ms — modest because the planner still touches most of the table. The index benefit is more pronounced on high-selectivity queries: filtering by `country_id` (one of ~20 countries, ~5% selectivity) or combining multiple filters reduces the scanned row count significantly. Planning time also dropped from 42ms to 0.17ms.
+
 **Connection pooling**
 
 Configured `pg.Pool` with explicit settings:
@@ -35,20 +59,20 @@ Configured `pg.Pool` with explicit settings:
 
 **Primary / replica split**
 
-Added a second connection pool pointing to a Neon read replica. All `SELECT` queries route to the replica pool; all writes route to the primary pool. This offloads read traffic from the primary, which is the dominant workload for this system.
+Added a second connection pool pointing to a Neon read replica. All SELECT queries route to the replica pool; all writes route to the primary pool. This offloads read traffic from the primary, which is the dominant workload for this system.
 
 Session-related reads (`getSessionByTokenHash`, `getUserById`) remain on the primary to avoid replication lag causing authentication failures.
 
 **Query restructuring**
 
-- Removed `COUNT(*) OVER()` window function from `getAllRecords`. This computed the total count across all matching rows before applying `LIMIT`, requiring a full scan on every paginated request. Replaced with two parallel queries: one for the page of data, one for the count. Both run simultaneously via `Promise.all`.
-- Fixed `LOWER(country_id)` in `WHERE` clause — this prevented the `country_id` index from being used. Changed to store and compare uppercase values consistently.
-- Fixed parameterized query placeholders (`$1`, `$2`, etc.) that were missing the `$` prefix, causing filters to be silently ignored.
+- Removed `COUNT(*) OVER()` window function from `getAllRecords`. This computed the total count across all matching rows before applying LIMIT, requiring a full scan on every paginated request. Replaced with two parallel queries: one for the page of data, one for the count. Both run simultaneously via `Promise.all`.
+- Fixed `LOWER(country_id)` in WHERE clause — this prevented the `country_id` index from being used. Changed to store and compare uppercase values consistently.
+- Fixed parameterized query placeholders that were missing the dollar sign prefix, causing filters to be silently ignored.
 - Rewrote `insertRecord` to use `ON CONFLICT (name) DO UPDATE SET id = classifications.id RETURNING *, (xmax = 0) AS inserted`. This eliminates a second round-trip to fetch the existing record on duplicate inserts. The `xmax = 0` trick detects whether the row was inserted or was a conflict in a single query.
 
 **Parallel external API calls**
 
-Profile creation calls Genderize, Agify, and Nationalize. These were sequential `await` calls. Changed to `Promise.all` for both the fetch calls and the `.json()` parsing, reducing the external API latency from ~(A + B + C)ms to ~max(A, B, C)ms.
+Profile creation calls Genderize, Agify, and Nationalize. These were sequential `await` calls. Changed to `Promise.all` for both the fetch calls and the `.json()` parsing, reducing the external API latency from approximately (A + B + C)ms to approximately max(A, B, C)ms.
 
 ### Before / after comparison
 
@@ -61,9 +85,7 @@ Measurements taken against the production Neon database with 500,000+ profiles o
 | `GET /api/profiles?gender=male` (cache miss) | ~1000ms+ | ~800ms | indexes reduce scan cost |
 | `GET /api/profiles?gender=male` (cache hit) | ~1000ms+ | ~123ms | ~88% faster |
 
-The uncached read time of ~1 second reflects the remote database round-trip to Neon plus query execution on 500k rows. The cache hit time of ~123ms reflects the Upstash Redis round-trip only — no database query. The P95 target of 2 seconds is met on both paths. The P50 target of 500ms is met on cache hits; uncached reads on a remote database at this row count are network-bound and approach the limit.
-
-At higher row counts, the index benefit becomes more pronounced — the sequential scan cost grows linearly with rows while the index scan cost grows logarithmically.
+The uncached read time of ~1 second reflects the remote database round-trip to Neon plus query execution on 500k rows. The cache hit time of ~123ms reflects the Upstash Redis round-trip only — no database query. The P95 target of 2 seconds is met on both paths. The P50 target of 500ms is met on cache hits.
 
 ---
 
@@ -73,11 +95,11 @@ At higher row counts, the index benefit becomes more pronounced — the sequenti
 
 Added `normalizeQueryOptions(options: AllProfileQueryOptions): string` in `src/utils.ts`.
 
-Before checking the cache or storing a result, the filter object is serialized into a canonical JSON string with a fixed key order. This ensures that two queries expressing the same intent — regardless of how the options object was constructed — produce the same cache key.
+Before checking the cache or storing a result, the filter object is serialized into a canonical JSON string with a fixed key order. This ensures that two queries expressing the same intent produce the same cache key regardless of how the options object was constructed.
 
 ```
-"Nigerian females between 20 and 45"  →  { gender: "female", country_id: "NG", min_age: 20, max_age: 45 }
-"Women aged 20–45 from Nigeria"        →  { gender: "female", country_id: "NG", min_age: 20, max_age: 45 }
+"Nigerian females between 20 and 45"  ->  { gender: "female", country_id: "NG", min_age: 20, max_age: 45 }
+"Women aged 20-45 from Nigeria"        ->  { gender: "female", country_id: "NG", min_age: 20, max_age: 45 }
 ```
 
 Both produce the cache key `profiles:{"gender":"female","country_id":"NG","min_age":20,"max_age":45}`.
@@ -122,17 +144,17 @@ Batch sizes of 500, 1,000, and 5,000 were tested against the production Neon dat
 - 1,000 rows/batch: ~25 seconds
 - 5,000 rows/batch: ~13 seconds with 10 concurrent batches
 
-The final implementation uses 5,000 rows per batch with 10 concurrent batch groups, completing 500k rows in 4–6 seconds on a local database. On the remote Neon database, network latency adds overhead per round-trip, making the concurrent approach more valuable.
+The final implementation uses 5,000 rows per batch with 10 concurrent batch groups, completing 500k rows in 4-6 seconds on a local database.
 
 **Validation**
 
 Each row is validated before being added to the batch:
 
-- Missing or empty `name` → skipped, counted as `missing_fields`
-- Unrecognised `gender` value → skipped, counted as `invalid_gender`
-- Non-numeric or negative `age` → skipped, counted as `invalid_age`
-- Invalid `country_id` (not in ISO 3166-1 alpha-2 map) → skipped, counted as `invalid_country`
-- Missing `gender_probability` or `country_probability` → skipped, counted as `missing_fields`
+- Missing or empty `name` — skipped, counted as `missing_fields`
+- Unrecognised `gender` value — skipped, counted as `invalid_gender`
+- Non-numeric or negative `age` — skipped, counted as `invalid_age`
+- Invalid `country_id` (not in ISO 3166-1 alpha-2 map) — skipped, counted as `invalid_country`
+- Missing `gender_probability` or `country_probability` — skipped, counted as `missing_fields`
 - `age_group` is optional — if missing or invalid, it is derived from `age`
 
 A single bad row never fails the upload. The stream continues processing remaining rows.
@@ -173,9 +195,9 @@ Tested with two simultaneous 500k-row uploads. Each request maintains its own `b
 
 ### Trade-offs and limitations
 
-- The entire valid batch accumulates in memory before flushing. For a 500k-row file with mostly valid rows, this is ~50MB of JavaScript objects. Mid-stream flushing would reduce peak memory but adds async complexity. The current approach is simpler and correct for the stated constraints.
+- The entire valid batch accumulates in memory before flushing. For a 500k-row file with mostly valid rows, this is approximately 50MB of JavaScript objects. Mid-stream flushing would reduce peak memory but adds async complexity. The current approach is simpler and correct for the stated constraints.
 - Concurrent uploads each hold their own batch in memory. Under high concurrency on a memory-constrained server, this could be a concern.
-- Read replica lag means a profile inserted via `POST /api/profiles` may not immediately appear in `GET /api/profiles` results if the replica hasn't caught up. Under normal Neon replication conditions this lag is under a second, but it is a real trade-off. Users who create a profile and immediately query should be aware results may be stale for a brief window — compounded by the 60-second cache TTL.
+- Read replica lag means a profile inserted via `POST /api/profiles` may not immediately appear in `GET /api/profiles` results if the replica has not caught up. Under normal Neon replication conditions this lag is under a second, but it is a real trade-off. This is compounded by the 60-second cache TTL — a newly inserted profile may not appear in query results for up to 60 seconds after insertion.
 
 ---
 
